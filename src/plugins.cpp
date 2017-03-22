@@ -14,11 +14,12 @@
 
 namespace emulex {
 namespace n {
-    class loader_impl;
+class loader_impl;
 struct xloader {
-    loader_impl* loader;
+    loader_impl* loader = 0;
     Local<Object> settings;
-    bool running;
+    bool running = false;
+    Persistent<Function> shutdown_callback;
 };
 
 static xloader XL;
@@ -42,6 +43,7 @@ class loader_impl : public emulex::loader_ {
     virtual void on_server_status(libed2k::server_status_alert* alert);
     virtual void on_server_message(libed2k::server_message_alert* alert);
     virtual void on_server_identity(libed2k::server_identity_alert* alert);
+    virtual void on_shutdown_completed();
     virtual void call_callback(int argc, Local<v8::Value>* argv);
 };
 //
@@ -53,7 +55,9 @@ struct alert_uv {
 static void alert_async(uv_work_t* req) {}
 static void alert_async_after(uv_work_t* req, int status) {
     alert_uv* alert = static_cast<alert_uv*>(req->data);
-    XL.loader->do_async_alert(*alert->alert);
+    if (XL.loader) {
+        XL.loader->do_async_alert(*alert->alert);
+    }
     delete alert->alert;
     delete alert;
 }
@@ -100,6 +104,9 @@ void loader_impl::do_async_alert(libed2k::alert const& alert) {
 }
 
 void loader_impl::on_alert(libed2k::alert const& alert) {
+    if (!XL.loader) {
+        return;
+    }
     alert_uv* uv = new alert_uv;
     uv->alert = alert.clone().release();
     uv->request.data = uv;
@@ -137,8 +144,7 @@ void loader_impl::on_server_resolved(libed2k::server_name_resolved_alert* alert)
 }
 
 void loader_impl::on_server_status(libed2k::server_status_alert* alert) {
-    DBG("loader_impl: server status: files count: " << alert->files_count << " users count "
-                                                          << alert->users_count);
+    DBG("loader_impl: server status: files count: " << alert->files_count << " users count " << alert->users_count);
     if (ed2k_callback.IsEmpty()) {
         return;
     }
@@ -170,7 +176,7 @@ void loader_impl::on_server_message(libed2k::server_message_alert* alert) {
 
 void loader_impl::on_server_identity(libed2k::server_identity_alert* alert) {
     DBG("loader_impl: server_identity_alert: " << alert->server_hash << " name:  " << alert->server_name
-                                         << " descr: " << alert->server_descr);
+                                               << " descr: " << alert->server_descr);
     if (ed2k_callback.IsEmpty()) {
         return;
     }
@@ -185,6 +191,19 @@ void loader_impl::on_server_identity(libed2k::server_identity_alert* alert) {
     vals->Set(String::NewFromUtf8(isolate, "descr"), String::NewFromUtf8(isolate, alert->server_descr.c_str()));
     argv[1] = vals;
     call_callback(1, argv);
+}
+
+void loader_impl::on_shutdown_completed() {
+    DBG("loader_impl: loader shutdown completed");
+    XL.running = false;
+    if (XL.loader) {
+        delete XL.loader;
+        XL.loader = 0;
+    }
+    if (XL.shutdown_callback.IsEmpty()) {
+        return;
+    }
+    Local<Function>::New(isolate, XL.shutdown_callback)->Call(isolate->GetCurrentContext()->Global(), 0, 0);
 }
 
 void loader_impl::call_callback(int argc, Local<Value>* argv) {
@@ -210,6 +229,19 @@ void bootstrap(const FunctionCallbackInfo<Value>& args) {
     XL.loader = new loader_impl(XL.settings);
     XL.loader->start();
     XL.running = true;
+}
+
+void shutdown(const FunctionCallbackInfo<Value>& args) {
+    Isolate* isolate = args.GetIsolate();
+    if (!XL.running) {
+        StringException(isolate, "the loader is not running");
+        return;
+    }
+    DBG("emulex: loader is shutdowning...");
+    if (args[0]->IsFunction()) {
+        XL.shutdown_callback.Reset(isolate, Local<Function>::Cast(args[0]));
+    }
+    XL.loader->stop();
 }
 
 void ed2k_server_connect(const FunctionCallbackInfo<Value>& args) {
@@ -257,6 +289,7 @@ void ed2k_add_dht_node(const FunctionCallbackInfo<Value>& args) {
 
 void init(Local<Object> exports) {
     NODE_SET_METHOD(exports, "bootstrap", bootstrap);
+    NODE_SET_METHOD(exports, "shutdown", shutdown);
     NODE_SET_METHOD(exports, "ed2k_server_connect", ed2k_server_connect);
     NODE_SET_METHOD(exports, "ed2k_add_dht_node", ed2k_add_dht_node);
 }

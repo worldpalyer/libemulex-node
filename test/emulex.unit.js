@@ -7,11 +7,17 @@ describe('emulex', function () {
                 callback: function (key, vals) {
                     console.log(key, vals);
                     if (key == "server_initialized") {
-                        done();
+                        // setTimeout(function () {
+                        emulex.shutdown(done);
+                        // }, 3000);
                     }
                 },
             },
         });
-        emulex.ed2k_server_connect("abc", "14.23.162.173", 4122, true);
+        emulex.ed2k_server_connect("abc", "loc.w", 4122, true);
+        // setTimeout(function () {
+        //     emulex.shutdown();
+        // }, 3000);
+        // emulex.shutdown();
     });
 });
