@@ -1,0 +1,38 @@
+{
+  "name": "libemulex-node",
+  "version": "0.1.5",
+  "description": "A synchronous HTTP Client library for node.js",
+  "main": "lib/emulex.js",
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/emulex/libemulex-node.git"
+  },
+  "author": "Centny",
+  "license": "BSD",
+  "gypfile": true,
+  "dependencies": {},
+  "devDependencies": {
+    "chai": "^3.5.0",
+    "istanbul": "^0.4.5",
+    "jshint": "^2.9.4",
+    "mocha": "^3.2.0",
+    "optimist": "^0.6.1"
+  },
+  "scripts": {
+    "install": "node-gyp rebuild",
+    "prj": "script/prj.sh",
+    "build": "node-gyp rebuild",
+    "test": "node test/run.js"
+  },
+  "bugs": {
+    "url": "https://github.com/emulex/libemulex-node/issues"
+  },
+  "homepage": "https://github.com/emulex/libemulex-node",
+  "directories": {
+    "test": "test"
+  },
+  "keywords": [
+    "emule",
+    "emulex"
+  ]
+}

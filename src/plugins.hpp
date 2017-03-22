@@ -1,0 +1,31 @@
+//
+//  plugins.hpp
+//  emulex
+//
+//  Created by Centny on 2/5/17.
+//
+//
+
+#ifndef plugins_hpp
+#define plugins_hpp
+
+#include <node.h>
+#include <stdio.h>
+#include <v8.h>
+#include <uv.h>
+#include <string>
+// #include <emulex/loader.hpp>
+
+namespace emulex {
+namespace n {
+
+using namespace node;
+using namespace v8;
+#define StringException(isolate, m) isolate->ThrowException(Exception::TypeError(String::NewFromUtf8(isolate, m)))
+//
+void Initialize(Local<Object> exports);
+void NodeRegister();
+//
+}
+}
+#endif /* plugins_hpp */
