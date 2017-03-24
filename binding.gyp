@@ -16,8 +16,11 @@
                 '/usr/lib',
             ],
             'sources': [
+                'src/common.h',
                 'src/plugins.hpp',
                 'src/plugins.cpp',
+                'src/hash.hpp',
+                'src/hash.cpp'
             ],
             'conditions': [
                 ['OS=="mac"', {

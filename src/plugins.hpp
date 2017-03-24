@@ -14,14 +14,13 @@
 #include <v8.h>
 #include <uv.h>
 #include <string>
-// #include <emulex/loader.hpp>
+#include "common.h"
 
 namespace emulex {
 namespace n {
 
 using namespace node;
 using namespace v8;
-#define StringException(isolate, m) isolate->ThrowException(Exception::TypeError(String::NewFromUtf8(isolate, m)))
 //
 void Initialize(Local<Object> exports);
 void NodeRegister();

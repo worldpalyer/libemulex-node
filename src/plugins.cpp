@@ -7,10 +7,7 @@
 //
 
 #include "plugins.hpp"
-//#include <boost/foreach.hpp>
-#define LIBED2K_DEBUG 1
-#define LIBED2K_USE_BOOST_DATE_TIME 1
-#include <emulex/loader.hpp>
+#include "hash.hpp"
 
 namespace emulex {
 namespace n {
@@ -43,6 +40,8 @@ class loader_impl : public emulex::loader_ {
     virtual void on_server_status(libed2k::server_status_alert* alert);
     virtual void on_server_message(libed2k::server_message_alert* alert);
     virtual void on_server_identity(libed2k::server_identity_alert* alert);
+    virtual void on_server_shared(libed2k::shared_files_alert* alert);
+    virtual void on_finished_transfer(libed2k::finished_transfer_alert* alert);
     virtual void on_shutdown_completed();
     virtual void call_callback(int argc, Local<v8::Value>* argv);
 };
@@ -71,6 +70,12 @@ loader_impl::loader_impl(Local<Object> settings) : base_settings(settings) {
     } else {
         ed2k_settings = Object::New(isolate);
     }
+    Local<Value> listen_port = ed2k_settings->Get(String::NewFromUtf8(isolate, "port"));
+    if (listen_port->IsNumber()) {
+        ed2k_session_::settings.listen_port = listen_port->Uint32Value();
+    } else {
+        ed2k_session_::settings.listen_port = 4132;
+    }
     Local<Value> timeout = ed2k_settings->Get(String::NewFromUtf8(isolate, "peer_timeout"));
     if (timeout->IsUint32()) {
         ed2k_session_::settings.peer_timeout = timeout->Uint32Value();
@@ -82,12 +87,6 @@ loader_impl::loader_impl(Local<Object> settings) : base_settings(settings) {
     if (known->IsString()) {
         String::Utf8Value known_s(known->ToString());
         ed2k_session_::settings.m_known_file = std::string(*known_s, known_s.length());
-    }
-    Local<Value> port = ed2k_settings->Get(String::NewFromUtf8(isolate, "peer_timeout"));
-    if (port->IsUint32()) {
-        ed2k_session_::settings.listen_port = port->Uint32Value();
-    } else {
-        ed2k_session_::settings.listen_port = 4668;
     }
     Local<Value> func = ed2k_settings->Get(String::NewFromUtf8(isolate, "callback"));
     if (func->IsFunction()) {
@@ -123,7 +122,7 @@ void loader_impl::on_server_initialized(libed2k::server_connection_initialized_a
     Local<Object> vals = Object::New(isolate);
     vals->Set(String::NewFromUtf8(isolate, "host"), String::NewFromUtf8(isolate, alert->host.c_str()));
     vals->Set(String::NewFromUtf8(isolate, "port"), Uint32::New(isolate, alert->port));
-    vals->Set(String::NewFromUtf8(isolate, "client_id"), Uint32::New(isolate, alert->client_id));
+    vals->Set(String::NewFromUtf8(isolate, "client_id"), Number::New(isolate, (int64_t)alert->client_id));
     argv[1] = vals;
     call_callback(2, argv);
 }
@@ -175,12 +174,12 @@ void loader_impl::on_server_message(libed2k::server_message_alert* alert) {
 }
 
 void loader_impl::on_server_identity(libed2k::server_identity_alert* alert) {
-    DBG("loader_impl: server_identity_alert: " << alert->server_hash << " name:  " << alert->server_name
+    DBG("loader_impl: server_identity_alert: " << alert->server_hash.toString() << " name:  " << alert->server_name
                                                << " descr: " << alert->server_descr);
     if (ed2k_callback.IsEmpty()) {
         return;
     }
-    Local<v8::Value> argv[1];
+    Local<v8::Value> argv[2];
     argv[0] = String::NewFromUtf8(isolate, "server_identity");
     Local<Object> vals = Object::New(isolate);
     vals->Set(String::NewFromUtf8(isolate, "host"), String::NewFromUtf8(isolate, alert->host.c_str()));
@@ -190,7 +189,64 @@ void loader_impl::on_server_identity(libed2k::server_identity_alert* alert) {
     vals->Set(String::NewFromUtf8(isolate, "name"), String::NewFromUtf8(isolate, alert->name.c_str()));
     vals->Set(String::NewFromUtf8(isolate, "descr"), String::NewFromUtf8(isolate, alert->server_descr.c_str()));
     argv[1] = vals;
-    call_callback(1, argv);
+    call_callback(2, argv);
+}
+
+void loader_impl::on_server_shared(libed2k::shared_files_alert* alert) {
+    std::vector<libed2k::shared_file_entry> collection = alert->m_files.m_collection;
+    DBG("loader_impl: search RESULT: " << collection.size());
+    if (ed2k_callback.IsEmpty()) {
+        return;
+    }
+    Local<Array> fs = Array::New(isolate, collection.size());
+    for (size_t n = 0; n < collection.size(); ++n) {
+        Local<Object> file = Object::New(isolate);
+        boost::uint64_t fsize = 0;
+        boost::shared_ptr<libed2k::base_tag> low = collection[n].m_list.getTagByNameId(libed2k::FT_FILESIZE);
+        boost::shared_ptr<libed2k::base_tag> hi = collection[n].m_list.getTagByNameId(libed2k::FT_FILESIZE_HI);
+        boost::shared_ptr<libed2k::base_tag> src = collection[n].m_list.getTagByNameId(libed2k::FT_SOURCES);
+        if (low.get()) {
+            fsize = low->asInt();
+        }
+        if (hi.get()) {
+            fsize += hi->asInt() << 32;
+        }
+        file->Set(String::NewFromUtf8(isolate, "size"), Number::New(isolate, (uint32_t)fsize));
+        file->Set(String::NewFromUtf8(isolate, "size_h"), Number::New(isolate, (uint32_t)(fsize >> 32)));
+        file->Set(String::NewFromUtf8(isolate, "sources"), Number::New(isolate, src->asInt()));
+        file->Set(String::NewFromUtf8(isolate, "hash"),
+                  String::NewFromUtf8(isolate, collection[n].m_hFile.toString().c_str()));
+        file->Set(
+            String::NewFromUtf8(isolate, "name"),
+            String::NewFromUtf8(isolate, collection[n].m_list.getStringTagByNameId(libed2k::FT_FILENAME).c_str()));
+        file->Set(
+            String::NewFromUtf8(isolate, "format"),
+            String::NewFromUtf8(isolate, collection[n].m_list.getStringTagByNameId(libed2k::FT_FILEFORMAT).c_str()));
+        fs->Set(n, file);
+    }
+    Local<v8::Value> argv[2];
+    argv[0] = String::NewFromUtf8(isolate, "server_shared");
+    argv[1] = fs;
+    call_callback(2, argv);
+}
+
+void loader_impl::on_finished_transfer(libed2k::finished_transfer_alert* alert) {
+    DBG("ed2k_session_: finished transfer: " << alert->m_handle.save_path());
+    if (ed2k_callback.IsEmpty()) {
+        return;
+    }
+    Local<Value> argv[2];
+    argv[0] = String::NewFromUtf8(isolate, "finished_transfer");
+    Local<Object> vals = Object::New(isolate);
+    libed2k::add_transfer_params params = alert->m_handle.params();
+    vals->Set(String::NewFromUtf8(isolate, "host"), Boolean::New(isolate, alert->m_handle.is_valid()));
+    vals->Set(String::NewFromUtf8(isolate, "name"), String::NewFromUtf8(isolate, alert->m_handle.name().c_str()));
+    vals->Set(String::NewFromUtf8(isolate, "save_path"), String::NewFromUtf8(isolate, params.file_path.c_str()));
+    vals->Set(String::NewFromUtf8(isolate, "hash"), String::NewFromUtf8(isolate, params.file_hash.toString().c_str()));
+    vals->Set(String::NewFromUtf8(isolate, "size"), Number::New(isolate, (uint32_t)alert->m_handle.size()));
+    vals->Set(String::NewFromUtf8(isolate, "size_h"), Number::New(isolate, (uint32_t)(alert->m_handle.size() >> 32)));
+    argv[1] = vals;
+    call_callback(2, argv);
 }
 
 void loader_impl::on_shutdown_completed() {
@@ -252,8 +308,6 @@ void ed2k_server_connect(const FunctionCallbackInfo<Value>& args) {
     }
     if (!(args.Length() > 3 && args[0]->IsString() && args[1]->IsString() && args[2]->IsNumber() &&
           args[3]->IsBoolean())) {
-        std::cout << args[0]->IsString() << args[1]->IsString() << args[2]->IsNumber() << args[3]->IsBoolean()
-                  << std::endl;
         StringException(isolate, "emulex ed2k server connect receive wrong arguments");
         return;
     }
@@ -275,16 +329,200 @@ void ed2k_add_dht_node(const FunctionCallbackInfo<Value>& args) {
         StringException(isolate, "emulex is not running");
         return;
     }
-    if (!(args.Length() > 2 && args[0]->IsStringObject() && args[1]->IsNumber() && args[2]->IsStringObject())) {
+    if (!(args.Length() > 2 && args[0]->IsString() && args[1]->IsNumber() && args[2]->IsString())) {
         StringException(isolate, "emulex ed2k add dht node receive wrong arguments");
         return;
     }
     String::Utf8Value host_c(args[0]->ToString());
     std::string host(*host_c);
     int port = (int)args[1]->Uint32Value();
-    String::Utf8Value id_c(args[1]->ToString());
+    String::Utf8Value id_c(args[2]->ToString());
     std::string id(*id_c);
     XL.loader->add_dht_node(host, port, id);
+}
+
+void search_file(const FunctionCallbackInfo<Value>& args) {
+    Isolate* isolate = args.GetIsolate();
+    if (!XL.running) {
+        StringException(isolate, "emulex is not running");
+        return;
+    }
+    if (!(args.Length() > 0 && args[0]->IsObject())) {
+        StringException(isolate, "emulex ed2k search file receive wrong arguments");
+        return;
+    }
+    Local<Object> vargs = args[0]->ToObject();
+    //
+    std::string query;
+    Local<Value> query_v = vargs->Get(String::NewFromUtf8(isolate, "query"));
+    if (query_v->IsString()) {
+        String::Utf8Value query_s(query_v->ToString());
+        if (query_s.length()) {
+            query = std::string(*query_s, query_s.length());
+        } else {
+            StringException(isolate, "emulex ed2k search file fail with args.query is empty");
+            return;
+        }
+    } else {
+        StringException(isolate, "emulex ed2k search file fail with args.query is not string");
+        return;
+    }
+    //
+    std::string extension;
+    Local<Value> extension_v = vargs->Get(String::NewFromUtf8(isolate, "extension"));
+    if (extension_v->IsString()) {
+        String::Utf8Value extension_s(extension_v->ToString());
+        query = std::string(*extension_s, extension_s.length());
+    }
+    //
+    boost::uint64_t min_size = 0;
+    Local<Value> min_size_v = vargs->Get(String::NewFromUtf8(isolate, "min_size"));
+    if (min_size_v->IsNumber()) {
+        min_size = (boost::uint64_t)min_size_v->NumberValue();
+    }
+    Local<Value> min_size_h_v = vargs->Get(String::NewFromUtf8(isolate, "min_size_h"));
+    if (min_size_h_v->IsNumber()) {
+        min_size += ((boost::uint64_t)min_size_v->NumberValue()) << 32;
+    }
+    //
+    boost::uint64_t max_size = 0;
+    Local<Value> max_size_v = vargs->Get(String::NewFromUtf8(isolate, "max_size"));
+    if (max_size_v->IsNumber()) {
+        max_size = (boost::uint64_t)max_size_v->NumberValue();
+    }
+    Local<Value> max_size_h_v = vargs->Get(String::NewFromUtf8(isolate, "max_size_h"));
+    if (max_size_h_v->IsNumber()) {
+        max_size += ((boost::uint64_t)max_size_h_v->NumberValue()) << 32;
+    }
+    //
+    //
+    XL.loader->search_file(query, extension, min_size, max_size);
+}
+
+void search_hash_file(const FunctionCallbackInfo<Value>& args) {
+    Isolate* isolate = args.GetIsolate();
+    if (!XL.running) {
+        StringException(isolate, "emulex is not running");
+        return;
+    }
+    if (!(args.Length() > 1 && args[0]->IsString() && args[1]->IsNumber())) {
+        StringException(isolate, "emulex ed2k search hash file receive wrong arguments");
+        return;
+    }
+    String::Utf8Value hash_c(args[0]->ToString());
+    std::string hash(*hash_c);
+    HashType type = MD4_H;
+    switch (args[1]->Uint32Value()) {
+        case 1:
+            type = MD4_H;
+            break;
+        case 2:
+            type = MD5_H;
+            break;
+        case 3:
+            type = SHA1_H;
+            break;
+        default:
+            type = MD4_H;
+    }
+    XL.loader->search_file(hash, type);
+}
+
+void add_transfer(const FunctionCallbackInfo<Value>& args) {
+    Isolate* isolate = args.GetIsolate();
+    if (!XL.running) {
+        StringException(isolate, "emulex is not running");
+        return;
+    }
+    if (!(args.Length() > 0 && args[0]->IsObject())) {
+        StringException(isolate, "emulex ed2k add transfer receive wrong arguments");
+        return;
+    }
+    Local<Object> vargs = args[0]->ToObject();
+    //
+    std::string hash;
+    Local<Value> hash_v = vargs->Get(String::NewFromUtf8(isolate, "hash"));
+    if (hash_v->IsString()) {
+        String::Utf8Value hash_s(hash_v->ToString());
+        if (hash_s.length()) {
+            hash = std::string(*hash_s, hash_s.length());
+        } else {
+            StringException(isolate, "emulex ed2k add transfer fail with args.hash is empty");
+            return;
+        }
+    } else {
+        StringException(isolate, "emulex ed2k add transfer fail with args.hash is not string");
+        return;
+    }
+    //
+    std::string path;
+    Local<Value> path_v = vargs->Get(String::NewFromUtf8(isolate, "path"));
+    if (path_v->IsString()) {
+        String::Utf8Value path_s(path_v->ToString());
+        if (path_s.length()) {
+            path = std::string(*path_s, path_s.length());
+        } else {
+            StringException(isolate, "emulex ed2k add transfer fail with args.path is empty");
+            return;
+        }
+    } else {
+        StringException(isolate, "emulex ed2k add transfer fail with args.path is not string");
+        return;
+    }
+    //
+    boost::uint64_t size = 0;
+    Local<Value> size_v = vargs->Get(String::NewFromUtf8(isolate, "size"));
+    if (size_v->IsNumber()) {
+        size = (boost::uint64_t)size_v->NumberValue();
+        if (size < 1) {
+            StringException(isolate, "emulex ed2k add transfer fail with args.size is zero");
+            return;
+        }
+    } else {
+        StringException(isolate, "emulex ed2k add transfer fail with args.size is not int");
+        return;
+    }
+    Local<Value> size_h_v = vargs->Get(String::NewFromUtf8(isolate, "size_h"));
+    if (size_h_v->IsNumber()) {
+        size += ((boost::uint64_t)size_v->NumberValue()) << 32;
+    }
+    //
+    std::vector<std::string> parts;
+    Local<Value> parts_v = vargs->Get(String::NewFromUtf8(isolate, "parts"));
+    if (parts_v->IsArray()) {
+        Local<Array> parts_l = Local<Array>::Cast(parts_v);
+        for (uint32_t i = 0; i < parts_l->Length(); i++) {
+            Local<Value> part_v = parts_l->Get(i);
+            String::Utf8Value part_s(part_v->ToString());
+            if (part_s.length()) {
+                parts.push_back(std::string(*part_s, part_s.length()));
+            } else {
+                StringException(isolate, "emulex ed2k add transfer fail with args.parts is not string");
+                return;
+            }
+        }
+    }
+    //
+    std::string resources;
+    Local<Value> resources_v = vargs->Get(String::NewFromUtf8(isolate, "resources"));
+    if (resources_v->IsString()) {
+        String::Utf8Value resources_s(resources_v->ToString());
+        if (resources_s.length()) {
+            resources = std::string(*resources_s, resources_s.length());
+        } else {
+            StringException(isolate, "emulex ed2k add transfer fail with args.resources is empty");
+            return;
+        }
+    }
+    //
+    bool seed;
+    Local<Value> seed_v = vargs->Get(String::NewFromUtf8(isolate, "seed"));
+    seed = seed_v->IsBoolean() && seed_v->BooleanValue();
+    //
+    //
+    DBG("emulex: add transfter by hash:" << hash << ",path:" << path << ",size:" << size << ",parts:" << parts.size()
+                                         << ",resource:" << resources << ",seed:" << seed);
+    XL.loader->add_transfer(hash, path, size, parts, resources, seed);
 }
 
 void init(Local<Object> exports) {
@@ -292,6 +530,11 @@ void init(Local<Object> exports) {
     NODE_SET_METHOD(exports, "shutdown", shutdown);
     NODE_SET_METHOD(exports, "ed2k_server_connect", ed2k_server_connect);
     NODE_SET_METHOD(exports, "ed2k_add_dht_node", ed2k_add_dht_node);
+    NODE_SET_METHOD(exports, "ed2k_server_connect", ed2k_server_connect);
+    NODE_SET_METHOD(exports, "search_file", search_file);
+    NODE_SET_METHOD(exports, "search_hash_file", search_hash_file);
+    NODE_SET_METHOD(exports, "add_transfer", add_transfer);
+    NODE_SET_METHOD(exports, "parse_hash", parse_hash);
 }
 
 NODE_MODULE(emulex, init);
