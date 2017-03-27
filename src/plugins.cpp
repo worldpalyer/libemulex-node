@@ -239,7 +239,7 @@ void loader_impl::on_finished_transfer(libed2k::finished_transfer_alert* alert) 
     argv[0] = String::NewFromUtf8(isolate, "finished_transfer");
     Local<Object> vals = Object::New(isolate);
     libed2k::add_transfer_params params = alert->m_handle.params();
-    vals->Set(String::NewFromUtf8(isolate, "host"), Boolean::New(isolate, alert->m_handle.is_valid()));
+    vals->Set(String::NewFromUtf8(isolate, "valid"), Boolean::New(isolate, alert->m_handle.is_valid()));
     vals->Set(String::NewFromUtf8(isolate, "name"), String::NewFromUtf8(isolate, alert->m_handle.name().c_str()));
     vals->Set(String::NewFromUtf8(isolate, "save_path"), String::NewFromUtf8(isolate, params.file_path.c_str()));
     vals->Set(String::NewFromUtf8(isolate, "hash"), String::NewFromUtf8(isolate, params.file_hash.toString().c_str()));
@@ -525,6 +525,114 @@ void add_transfer(const FunctionCallbackInfo<Value>& args) {
     XL.loader->add_transfer(hash, path, size, parts, resources, seed);
 }
 
+void load_node_dat(const FunctionCallbackInfo<Value>& args) {
+    Isolate* isolate = args.GetIsolate();
+    if (!(args.Length() > 0 && args[0]->IsObject())) {
+        StringException(isolate, "emulex ed2k load node dat receive wrong arguments");
+        return;
+    }
+    Local<Object> vargs = args[0]->ToObject();
+    //
+    //
+    std::string path;
+    Local<Value> path_v = vargs->Get(String::NewFromUtf8(isolate, "path"));
+    if (path_v->IsString()) {
+        String::Utf8Value path_s(path_v->ToString());
+        if (path_s.length()) {
+            path = std::string(*path_s, path_s.length());
+        } else {
+            StringException(isolate, "emulex ed2k load node dat fail with args.path is empty");
+            return;
+        }
+    } else {
+        StringException(isolate, "emulex ed2k load node dat fail with args.path is not string");
+        return;
+    }
+    libed2k::kad_nodes_dat knd;
+    if (!emulex::load_nodes(knd, path)) {
+        std::string emsg = "emulex ed2k load node dat fail with read file " + path + " error";
+        StringException(isolate, emsg.c_str());
+        return;
+    }
+    //
+    uint32_t nidx = 0;
+    Local<Array> nodes =
+        Array::New(isolate, knd.bootstrap_container.m_collection.size() + knd.contacts_container.size());
+    for (size_t i = 0; i != knd.bootstrap_container.m_collection.size(); ++i) {
+        libed2k::kad_entry& entry = knd.bootstrap_container.m_collection[i];
+        Local<Object> node = Object::New(isolate);
+        node->Set(String::NewFromUtf8(isolate, "address"),
+                  String::NewFromUtf8(isolate, libed2k::int2ipstr(entry.address.address).c_str()));
+        node->Set(String::NewFromUtf8(isolate, "udp_port"), Number::New(isolate, (uint16_t)entry.address.udp_port));
+        node->Set(String::NewFromUtf8(isolate, "kid"), String::NewFromUtf8(isolate, entry.kid.toString().c_str()));
+        node->Set(String::NewFromUtf8(isolate, "bootstrap"), Boolean::New(isolate, true));
+        nodes->Set(nidx, node);
+        nidx++;
+    }
+
+    for (std::list<libed2k::kad_entry>::const_iterator itr = knd.contacts_container.begin();
+         itr != knd.contacts_container.end(); ++itr) {
+        Local<Object> node = Object::New(isolate);
+        node->Set(String::NewFromUtf8(isolate, "address"),
+                  String::NewFromUtf8(isolate, libed2k::int2ipstr(itr->address.address).c_str()));
+        node->Set(String::NewFromUtf8(isolate, "udp_port"), Number::New(isolate, (uint16_t)itr->address.udp_port));
+        node->Set(String::NewFromUtf8(isolate, "kid"), String::NewFromUtf8(isolate, itr->kid.toString().c_str()));
+        node->Set(String::NewFromUtf8(isolate, "bootstrap"), Boolean::New(isolate, false));
+        nodes->Set(nidx, node);
+        nidx++;
+    }
+    args.GetReturnValue().Set(nodes);
+}
+
+void load_server_met(const FunctionCallbackInfo<Value>& args) {
+    Isolate* isolate = args.GetIsolate();
+    if (!(args.Length() > 0 && args[0]->IsObject())) {
+        StringException(isolate, "emulex ed2k load server met receive wrong arguments");
+        return;
+    }
+    Local<Object> vargs = args[0]->ToObject();
+    //
+    //
+    std::string path;
+    Local<Value> path_v = vargs->Get(String::NewFromUtf8(isolate, "path"));
+    if (path_v->IsString()) {
+        String::Utf8Value path_s(path_v->ToString());
+        if (path_s.length()) {
+            path = std::string(*path_s, path_s.length());
+        } else {
+            StringException(isolate, "emulex ed2k load server met fail with args.path is empty");
+            return;
+        }
+    } else {
+        StringException(isolate, "emulex ed2k load server met fail with args.path is not string");
+        return;
+    }
+    libed2k::server_met sm;
+    if (!emulex::load_server_met(sm, path)) {
+        std::string emsg = "emulex ed2k load server met fail with read file " + path + " error";
+        StringException(isolate, emsg.c_str());
+        return;
+    }
+    //
+    uint32_t nidx = 0;
+    Local<Array> nodes = Array::New(isolate, sm.m_servers.m_size);
+    for (size_t n = 0; n < sm.m_servers.m_size; ++n) {
+        Local<Object> node = Object::New(isolate);
+        node->Set(String::NewFromUtf8(isolate, "address"),
+                  String::NewFromUtf8(
+                      isolate, libed2k::int2ipstr(sm.m_servers.m_collection.at(n).m_network_point.m_nIP).c_str()));
+        node->Set(String::NewFromUtf8(isolate, "port"),
+                  Number::New(isolate, (uint16_t)sm.m_servers.m_collection.at(n).m_network_point.m_nPort));
+        node->Set(
+            String::NewFromUtf8(isolate, "name"),
+            String::NewFromUtf8(
+                isolate, sm.m_servers.m_collection.at(n).m_list.getStringTagByNameId(libed2k::ST_SERVERNAME).c_str()));
+        nodes->Set(nidx, node);
+        nidx++;
+    }
+    args.GetReturnValue().Set(nodes);
+}
+
 void init(Local<Object> exports) {
     NODE_SET_METHOD(exports, "bootstrap", bootstrap);
     NODE_SET_METHOD(exports, "shutdown", shutdown);
@@ -534,6 +642,8 @@ void init(Local<Object> exports) {
     NODE_SET_METHOD(exports, "search_file", search_file);
     NODE_SET_METHOD(exports, "search_hash_file", search_hash_file);
     NODE_SET_METHOD(exports, "add_transfer", add_transfer);
+    NODE_SET_METHOD(exports, "load_node_dat", load_node_dat);
+    NODE_SET_METHOD(exports, "load_server_met", load_server_met);
     NODE_SET_METHOD(exports, "parse_hash", parse_hash);
 }
 

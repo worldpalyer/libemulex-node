@@ -1,5 +1,6 @@
 var emulex = require("../lib/emulex.js");
 var as = require("assert");
+var fs = require("fs");
 describe('emulex', function () {
     it("hash", function (done) {
         emulex.parse_hash({
@@ -25,7 +26,40 @@ describe('emulex', function () {
             done();
         });
     });
+    it("nodes.dat", function (done) {
+        try {
+            var ns = emulex.load_node_dat({
+                path: __dirname + "/nodes.dat"
+            });
+            console.log(ns);
+            as.equal(ns.length > 0, true);
+            done();
+        } catch (e) {
+            as.equal(e, null);
+        }
+    });
+    it("servers.met", function (done) {
+        try {
+            var ns = emulex.load_server_met({
+                path: __dirname + "/server.met"
+            });
+            console.log(ns);
+            as.equal(ns.length > 0, true);
+            done();
+        } catch (e) {
+            as.equal(e, null);
+        }
+    });
     it("emulex", function (done) {
+        // if (true) {
+        //     done();
+        //     return;
+        // }
+        try {
+            fs.unlinkSync("abc.txt");
+        } catch (e) {
+
+        }
         emulex.bootstrap({
             ed2k: {
                 port: 4769,
