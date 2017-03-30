@@ -524,6 +524,36 @@ void add_transfer(const FunctionCallbackInfo<Value>& args) {
                                          << ",resource:" << resources << ",seed:" << seed);
     XL.loader->add_transfer(hash, path, size, parts, resources, seed);
 }
+    
+void list_transfer(const FunctionCallbackInfo<Value>& args) {
+    Isolate* isolate = args.GetIsolate();
+    if (!XL.running) {
+        StringException(isolate, "emulex is not running");
+        return;
+    }
+    std::vector<libed2k::transfer_handle> ths=XL.loader->list_transfter();
+    Local<Array> ts =Array::New(isolate,ths.size());
+    for(size_t i=0;i<ths.size();i++){
+        const libed2k::transfer_handle& th=ths.at(i);
+        const libed2k::transfer_status status=th.status();
+        Local<Object> t=Object::New(isolate);
+        t->Set(String::NewFromUtf8(isolate, "emd4"),String::NewFromUtf8(isolate, th.hash().toString().c_str()));
+        t->Set(String::NewFromUtf8(isolate, "save_path"),String::NewFromUtf8(isolate, th.save_path().c_str()));
+        t->Set(String::NewFromUtf8(isolate, "size"),Number::New(isolate, th.size()));
+        t->Set(String::NewFromUtf8(isolate, "state"),Uint32::New(isolate, th.state()));
+        t->Set(String::NewFromUtf8(isolate, "all_time_download"),Uint32::New(isolate, status.all_time_download));
+        t->Set(String::NewFromUtf8(isolate, "all_time_upload"),Uint32::New(isolate, status.all_time_upload));
+        t->Set(String::NewFromUtf8(isolate, "download_payload_rate"),Uint32::New(isolate, status.download_payload_rate));
+        t->Set(String::NewFromUtf8(isolate, "upload_payload_rate"),Uint32::New(isolate, status.upload_payload_rate));
+        t->Set(String::NewFromUtf8(isolate, "download_payload_rate"),Uint32::New(isolate, status.download_payload_rate));
+        t->Set(String::NewFromUtf8(isolate, "num_seeds"),Uint32::New(isolate, status.num_seeds));
+        t->Set(String::NewFromUtf8(isolate, "num_peers"),Uint32::New(isolate, status.num_peers));
+        t->Set(String::NewFromUtf8(isolate, "total_done"),Uint32::New(isolate, status.total_done));
+        t->Set(String::NewFromUtf8(isolate, "progress"),Number::New(isolate, status.progress));
+        ts->Set(i, t);
+    }
+    args.GetReturnValue().Set(ts);
+}
 
 void load_node_dat(const FunctionCallbackInfo<Value>& args) {
     Isolate* isolate = args.GetIsolate();
@@ -642,6 +672,7 @@ void init(Local<Object> exports) {
     NODE_SET_METHOD(exports, "search_file", search_file);
     NODE_SET_METHOD(exports, "search_hash_file", search_hash_file);
     NODE_SET_METHOD(exports, "add_transfer", add_transfer);
+    NODE_SET_METHOD(exports, "list_transfer", list_transfer);
     NODE_SET_METHOD(exports, "load_node_dat", load_node_dat);
     NODE_SET_METHOD(exports, "load_server_met", load_server_met);
     NODE_SET_METHOD(exports, "parse_hash", parse_hash);
