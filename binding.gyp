@@ -44,6 +44,18 @@
                         ],
                     },
                 }],
+                ['OS=="linux"', {
+                    'cflags_cc': ['-frtti'],
+                    'ldflags': [
+                        "-L/usr/local/lib",
+                        '-lboost_system',
+                        "-lboost_iostreams",
+                        "-lboost_filesystem",
+                        "-lboost_thread",
+                        "-lemulex",
+                        "<(other_cflags)",
+                    ],
+                }],
             ],
         }
     ]
