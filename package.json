@@ -8,7 +8,7 @@
     "url": "git://github.com/emulex/libemulex-node.git"
   },
   "author": "Centny",
-  "license": "BSD",
+  "license": "GPL-3.0",
   "gypfile": true,
   "dependencies": {},
   "devDependencies": {

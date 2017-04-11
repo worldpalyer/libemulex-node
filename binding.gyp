@@ -54,9 +54,7 @@
                         ],
                     },
                 }],
-                [
-                    "OS=='win'",
-                    {
+                ["OS=='win'", {
                         'defines': [
                             "LIBED2K_LINKING_SHARED",
                             "NDEBUG",
@@ -119,8 +117,19 @@
                                 }
                             }
                         }
-                    }
-                ]
+                    }],
+                ['OS=="linux"', {
+                    'cflags_cc': ['-frtti'],
+                    'ldflags': [
+                        "-L/usr/local/lib",
+                        '-lboost_system',
+                        "-lboost_iostreams",
+                        "-lboost_filesystem",
+                        "-lboost_thread",
+                        "-lemulex",
+                        "<(other_cflags)",
+                    ],
+                }],
             ],
         }
     ]
