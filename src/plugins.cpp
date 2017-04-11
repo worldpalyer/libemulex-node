@@ -42,6 +42,9 @@ class loader_impl : public emulex::loader_ {
     virtual void on_server_identity(libed2k::server_identity_alert* alert);
     virtual void on_server_shared(libed2k::shared_files_alert* alert);
     virtual void on_finished_transfer(libed2k::finished_transfer_alert* alert);
+    virtual void on_resumed_data_transfer(libed2k::resumed_transfer_alert* alert);
+    virtual void on_paused_data_transfer(libed2k::paused_transfer_alert* alert);
+    virtual void on_deleted_data_transfer(libed2k::deleted_transfer_alert* alert);
     virtual void on_shutdown_completed();
     virtual void call_callback(int argc, Local<v8::Value>* argv);
 };
@@ -245,6 +248,47 @@ void loader_impl::on_finished_transfer(libed2k::finished_transfer_alert* alert) 
     vals->Set(String::NewFromUtf8(isolate, "hash"), String::NewFromUtf8(isolate, params.file_hash.toString().c_str()));
     vals->Set(String::NewFromUtf8(isolate, "size"), Number::New(isolate, (uint32_t)alert->m_handle.size()));
     vals->Set(String::NewFromUtf8(isolate, "size_h"), Number::New(isolate, (uint32_t)(alert->m_handle.size() >> 32)));
+    argv[1] = vals;
+    call_callback(2, argv);
+}
+
+void loader_impl::on_resumed_data_transfer(libed2k::resumed_transfer_alert* alert) {
+    DBG("ed2k_session_: resumed data transfer: " << alert->m_handle.save_path());
+    if (ed2k_callback.IsEmpty()) {
+        return;
+    }
+    Local<Value> argv[2];
+    argv[0] = String::NewFromUtf8(isolate, "resumed_data_transfer");
+    Local<Object> vals = Object::New(isolate);
+    vals->Set(String::NewFromUtf8(isolate, "hash"),
+              String::NewFromUtf8(isolate, alert->m_handle.hash().toString().c_str()));
+    argv[1] = vals;
+    call_callback(2, argv);
+}
+
+void loader_impl::on_paused_data_transfer(libed2k::paused_transfer_alert* alert) {
+    DBG("ed2k_session_: paused data transfer: " << alert->m_handle.save_path());
+    if (ed2k_callback.IsEmpty()) {
+        return;
+    }
+    Local<Value> argv[2];
+    argv[0] = String::NewFromUtf8(isolate, "paused_data_transfer");
+    Local<Object> vals = Object::New(isolate);
+    vals->Set(String::NewFromUtf8(isolate, "hash"),
+              String::NewFromUtf8(isolate, alert->m_handle.hash().toString().c_str()));
+    argv[1] = vals;
+    call_callback(2, argv);
+}
+
+void loader_impl::on_deleted_data_transfer(libed2k::deleted_transfer_alert* alert) {
+    DBG("ed2k_session_: deleted data transfer: " << alert->m_hash.toString());
+    if (ed2k_callback.IsEmpty()) {
+        return;
+    }
+    Local<Value> argv[2];
+    argv[0] = String::NewFromUtf8(isolate, "deleted_data_transfer");
+    Local<Object> vals = Object::New(isolate);
+    vals->Set(String::NewFromUtf8(isolate, "hash"), String::NewFromUtf8(isolate, alert->m_hash.toString().c_str()));
     argv[1] = vals;
     call_callback(2, argv);
 }
@@ -524,35 +568,126 @@ void add_transfer(const FunctionCallbackInfo<Value>& args) {
                                          << ",resource:" << resources << ",seed:" << seed);
     XL.loader->add_transfer(hash, path, size, parts, resources, seed);
 }
-    
+
 void list_transfer(const FunctionCallbackInfo<Value>& args) {
     Isolate* isolate = args.GetIsolate();
     if (!XL.running) {
         StringException(isolate, "emulex is not running");
         return;
     }
-    std::vector<libed2k::transfer_handle> ths=XL.loader->list_transfter();
-    Local<Array> ts =Array::New(isolate,ths.size());
-    for(size_t i=0;i<ths.size();i++){
-        const libed2k::transfer_handle& th=ths.at(i);
-        const libed2k::transfer_status status=th.status();
-        Local<Object> t=Object::New(isolate);
-        t->Set(String::NewFromUtf8(isolate, "emd4"),String::NewFromUtf8(isolate, th.hash().toString().c_str()));
-        t->Set(String::NewFromUtf8(isolate, "save_path"),String::NewFromUtf8(isolate, th.save_path().c_str()));
-        t->Set(String::NewFromUtf8(isolate, "size"),Number::New(isolate, th.size()));
-        t->Set(String::NewFromUtf8(isolate, "state"),Uint32::New(isolate, th.state()));
-        t->Set(String::NewFromUtf8(isolate, "all_time_download"),Uint32::New(isolate, status.all_time_download));
-        t->Set(String::NewFromUtf8(isolate, "all_time_upload"),Uint32::New(isolate, status.all_time_upload));
-        t->Set(String::NewFromUtf8(isolate, "download_payload_rate"),Uint32::New(isolate, status.download_payload_rate));
-        t->Set(String::NewFromUtf8(isolate, "upload_payload_rate"),Uint32::New(isolate, status.upload_payload_rate));
-        t->Set(String::NewFromUtf8(isolate, "download_payload_rate"),Uint32::New(isolate, status.download_payload_rate));
-        t->Set(String::NewFromUtf8(isolate, "num_seeds"),Uint32::New(isolate, status.num_seeds));
-        t->Set(String::NewFromUtf8(isolate, "num_peers"),Uint32::New(isolate, status.num_peers));
-        t->Set(String::NewFromUtf8(isolate, "total_done"),Uint32::New(isolate, status.total_done));
-        t->Set(String::NewFromUtf8(isolate, "progress"),Number::New(isolate, status.progress));
+    std::vector<libed2k::transfer_handle> ths = XL.loader->list_transfter();
+    Local<Array> ts = Array::New(isolate, ths.size());
+    for (size_t i = 0; i < ths.size(); i++) {
+        const libed2k::transfer_handle& th = ths.at(i);
+        const libed2k::transfer_status status = th.status();
+        Local<Object> t = Object::New(isolate);
+        t->Set(String::NewFromUtf8(isolate, "emd4"), String::NewFromUtf8(isolate, th.hash().toString().c_str()));
+        t->Set(String::NewFromUtf8(isolate, "save_path"), String::NewFromUtf8(isolate, th.save_path().c_str()));
+        t->Set(String::NewFromUtf8(isolate, "size"), Number::New(isolate, th.size()));
+        t->Set(String::NewFromUtf8(isolate, "state"), Uint32::New(isolate, th.state()));
+        t->Set(String::NewFromUtf8(isolate, "all_time_download"), Uint32::New(isolate, status.all_time_download));
+        t->Set(String::NewFromUtf8(isolate, "all_time_upload"), Uint32::New(isolate, status.all_time_upload));
+        t->Set(String::NewFromUtf8(isolate, "download_payload_rate"),
+               Uint32::New(isolate, status.download_payload_rate));
+        t->Set(String::NewFromUtf8(isolate, "upload_payload_rate"), Uint32::New(isolate, status.upload_payload_rate));
+        t->Set(String::NewFromUtf8(isolate, "download_payload_rate"),
+               Uint32::New(isolate, status.download_payload_rate));
+        t->Set(String::NewFromUtf8(isolate, "num_seeds"), Uint32::New(isolate, status.num_seeds));
+        t->Set(String::NewFromUtf8(isolate, "num_peers"), Uint32::New(isolate, status.num_peers));
+        t->Set(String::NewFromUtf8(isolate, "total_done"), Uint32::New(isolate, status.total_done));
+        t->Set(String::NewFromUtf8(isolate, "progress"), Number::New(isolate, status.progress));
         ts->Set(i, t);
     }
     args.GetReturnValue().Set(ts);
+}
+
+void pause_transfer(const FunctionCallbackInfo<Value>& args) {
+    Isolate* isolate = args.GetIsolate();
+    if (!XL.running) {
+        StringException(isolate, "emulex is not running");
+        return;
+    }
+    if (!(args.Length() > 0 && args[0]->IsObject())) {
+        StringException(isolate, "emulex ed2k pause transfer receive wrong arguments");
+        return;
+    }
+    Local<Object> vargs = args[0]->ToObject();
+    //
+    std::string hash;
+    Local<Value> hash_v = vargs->Get(String::NewFromUtf8(isolate, "hash"));
+    if (hash_v->IsString()) {
+        String::Utf8Value hash_s(hash_v->ToString());
+        if (hash_s.length()) {
+            hash = std::string(*hash_s, hash_s.length());
+        } else {
+            StringException(isolate, "emulex ed2k pause transfer fail with args.hash is empty");
+            return;
+        }
+    } else {
+        StringException(isolate, "emulex ed2k pause transfer fail with args.hash is not string");
+        return;
+    }
+    auto hash_4 = libed2k::md4_hash::fromString(hash);
+    XL.loader->pause(hash_4);
+}
+
+void resume_transfer(const FunctionCallbackInfo<Value>& args) {
+    Isolate* isolate = args.GetIsolate();
+    if (!XL.running) {
+        StringException(isolate, "emulex is not running");
+        return;
+    }
+    if (!(args.Length() > 0 && args[0]->IsObject())) {
+        StringException(isolate, "emulex ed2k resume transfer receive wrong arguments");
+        return;
+    }
+    Local<Object> vargs = args[0]->ToObject();
+    //
+    std::string hash;
+    Local<Value> hash_v = vargs->Get(String::NewFromUtf8(isolate, "hash"));
+    if (hash_v->IsString()) {
+        String::Utf8Value hash_s(hash_v->ToString());
+        if (hash_s.length()) {
+            hash = std::string(*hash_s, hash_s.length());
+        } else {
+            StringException(isolate, "emulex ed2k resume transfer fail with args.hash is empty");
+            return;
+        }
+    } else {
+        StringException(isolate, "emulex ed2k resume transfer fail with args.hash is not string");
+        return;
+    }
+    auto hash_4 = libed2k::md4_hash::fromString(hash);
+    XL.loader->resume(hash_4);
+}
+
+void restore_transfer(const FunctionCallbackInfo<Value>& args) {
+    Isolate* isolate = args.GetIsolate();
+    if (!XL.running) {
+        StringException(isolate, "emulex is not running");
+        return;
+    }
+    if (!(args.Length() > 0 && args[0]->IsObject())) {
+        StringException(isolate, "emulex ed2k restore transfer receive wrong arguments");
+        return;
+    }
+    Local<Object> vargs = args[0]->ToObject();
+    //
+    std::string path;
+    Local<Value> path_v = vargs->Get(String::NewFromUtf8(isolate, "path"));
+    if (path_v->IsString()) {
+        String::Utf8Value path_s(path_v->ToString());
+        if (path_s.length()) {
+            path = std::string(*path_s, path_s.length());
+        } else {
+            StringException(isolate, "emulex ed2k restore transfer fail with args.hash is empty");
+            return;
+        }
+    } else {
+        StringException(isolate, "emulex ed2k restore transfer fail with args.hash is not string");
+        return;
+    }
+    XL.loader->restore(path);
 }
 
 void load_node_dat(const FunctionCallbackInfo<Value>& args) {
@@ -673,6 +808,9 @@ void init(Local<Object> exports) {
     NODE_SET_METHOD(exports, "search_hash_file", search_hash_file);
     NODE_SET_METHOD(exports, "add_transfer", add_transfer);
     NODE_SET_METHOD(exports, "list_transfer", list_transfer);
+    NODE_SET_METHOD(exports, "pause_transfer", pause_transfer);
+    NODE_SET_METHOD(exports, "resume_transfer", resume_transfer);
+    NODE_SET_METHOD(exports, "restore_transfer", restore_transfer);
     NODE_SET_METHOD(exports, "load_node_dat", load_node_dat);
     NODE_SET_METHOD(exports, "load_server_met", load_server_met);
     NODE_SET_METHOD(exports, "parse_hash", parse_hash);
