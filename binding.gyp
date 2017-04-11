@@ -7,7 +7,7 @@
                 "DEPS_DIR%":"../deps"
             },
             'cflags_cc!': ['-fexceptions'],
-            'target_name': 'emulex',
+            'target_name': 'emulexnode',
             'defines': [
                 "BOOST_ALL_NO_LIB",
                 "LIBED2K_DEBUG",
