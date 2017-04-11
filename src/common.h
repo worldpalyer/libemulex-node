@@ -9,7 +9,7 @@
 #ifndef common_h
 #define common_h
 
-#define LIBED2K_DEBUG 1
+//#define LIBED2K_DEBUG
 #define LIBED2K_USE_BOOST_DATE_TIME 1
 #include <emulex/loader.hpp>
 
