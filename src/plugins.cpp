@@ -45,9 +45,35 @@ class loader_impl : public emulex::loader_ {
     virtual void on_resumed_data_transfer(libed2k::resumed_transfer_alert* alert);
     virtual void on_paused_data_transfer(libed2k::paused_transfer_alert* alert);
     virtual void on_deleted_data_transfer(libed2k::deleted_transfer_alert* alert);
+    virtual void on_state_changed(libed2k::state_changed_alert* alert);
+    virtual void on_transfer_added(libed2k::added_transfer_alert* alert);
+    virtual void on_portmap(libed2k::portmap_alert* alert);
     virtual void on_shutdown_completed();
     virtual void call_callback(int argc, Local<v8::Value>* argv);
 };
+
+const char* transfer_status_c(libed2k::transfer_status::state_t t) {
+    switch (t) {
+        case libed2k::transfer_status::queued_for_checking:
+            return "queued_for_checking";
+        case libed2k::transfer_status::checking_files:
+            return "checking_files";
+        case libed2k::transfer_status::downloading_metadata:
+            return "downloading_metadata";
+        case libed2k::transfer_status::downloading:
+            return "downloading";
+        case libed2k::transfer_status::finished:
+            return "finished";
+        case libed2k::transfer_status::seeding:
+            return "seeding";
+        case libed2k::transfer_status::allocating:
+            return "allocating";
+        case libed2k::transfer_status::checking_resume_data:
+            return "checking_resume_data";
+        default:
+            return "unknow";
+    }
+}
 //
 struct alert_uv {
     uv_work_t request;
@@ -289,6 +315,42 @@ void loader_impl::on_deleted_data_transfer(libed2k::deleted_transfer_alert* aler
     argv[0] = String::NewFromUtf8(isolate, "deleted_data_transfer");
     Local<Object> vals = Object::New(isolate);
     vals->Set(String::NewFromUtf8(isolate, "hash"), String::NewFromUtf8(isolate, alert->m_hash.toString().c_str()));
+    argv[1] = vals;
+    call_callback(2, argv);
+}
+
+void loader_impl::on_state_changed(libed2k::state_changed_alert* alert) {
+    DBG("ed2k_session_: state changed" << alert->m_handle.hash());
+    if (ed2k_callback.IsEmpty()) {
+        return;
+    }
+    Local<Value> argv[2];
+    argv[0] = String::NewFromUtf8(isolate, "state_changed");
+    Local<Object> vals = Object::New(isolate);
+    vals->Set(String::NewFromUtf8(isolate, "hash"),
+              String::NewFromUtf8(isolate, alert->m_handle.hash().toString().c_str()));
+    vals->Set(String::NewFromUtf8(isolate, "old"), String::NewFromUtf8(isolate, transfer_status_c(alert->m_old_state)));
+    vals->Set(String::NewFromUtf8(isolate, "new"), String::NewFromUtf8(isolate, transfer_status_c(alert->m_old_state)));
+    argv[1] = vals;
+    call_callback(2, argv);
+}
+    
+void loader_impl::on_transfer_added(libed2k::added_transfer_alert* alert){
+    Local<Value> argv[2];
+    argv[0] = String::NewFromUtf8(isolate, "transfer_added");
+    Local<Object> vals = Object::New(isolate);
+    vals->Set(String::NewFromUtf8(isolate, "hash"),
+              String::NewFromUtf8(isolate, alert->m_handle.hash().toString().c_str()));
+    argv[1] = vals;
+    call_callback(2, argv);
+}
+    
+void loader_impl::on_portmap(libed2k::portmap_alert* alert){
+    Local<Value> argv[2];
+    argv[0] = String::NewFromUtf8(isolate, "portmap");
+    Local<Object> vals = Object::New(isolate);
+    vals->Set(String::NewFromUtf8(isolate, "mapping"), Number::New(isolate, (uint32_t)alert->mapping));
+    vals->Set(String::NewFromUtf8(isolate, "external_port"), Number::New(isolate, (uint32_t)alert->external_port));
     argv[1] = vals;
     call_callback(2, argv);
 }
