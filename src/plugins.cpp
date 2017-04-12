@@ -628,7 +628,7 @@ void pause_transfer(const FunctionCallbackInfo<Value>& args) {
         return;
     }
     auto hash_4 = libed2k::md4_hash::fromString(hash);
-    XL.loader->pause(hash_4);
+    XL.loader->pause_transfer(hash_4);
 }
 
 void resume_transfer(const FunctionCallbackInfo<Value>& args) {
@@ -658,7 +658,37 @@ void resume_transfer(const FunctionCallbackInfo<Value>& args) {
         return;
     }
     auto hash_4 = libed2k::md4_hash::fromString(hash);
-    XL.loader->resume(hash_4);
+    XL.loader->resume_transfer(hash_4);
+}
+
+void remove_transfer(const FunctionCallbackInfo<Value>& args) {
+    Isolate* isolate = args.GetIsolate();
+    if (!XL.running) {
+        StringException(isolate, "emulex is not running");
+        return;
+    }
+    if (!(args.Length() > 0 && args[0]->IsObject())) {
+        StringException(isolate, "emulex ed2k resume transfer receive wrong arguments");
+        return;
+    }
+    Local<Object> vargs = args[0]->ToObject();
+    //
+    std::string hash;
+    Local<Value> hash_v = vargs->Get(String::NewFromUtf8(isolate, "hash"));
+    if (hash_v->IsString()) {
+        String::Utf8Value hash_s(hash_v->ToString());
+        if (hash_s.length()) {
+            hash = std::string(*hash_s, hash_s.length());
+        } else {
+            StringException(isolate, "emulex ed2k resume transfer fail with args.hash is empty");
+            return;
+        }
+    } else {
+        StringException(isolate, "emulex ed2k resume transfer fail with args.hash is not string");
+        return;
+    }
+    auto hash_4 = libed2k::md4_hash::fromString(hash);
+    XL.loader->remove_transfer(hash_4);
 }
 
 void restore_transfer(const FunctionCallbackInfo<Value>& args) {
@@ -687,7 +717,7 @@ void restore_transfer(const FunctionCallbackInfo<Value>& args) {
         StringException(isolate, "emulex ed2k restore transfer fail with args.hash is not string");
         return;
     }
-    XL.loader->restore(path);
+    XL.loader->restore_transfer(path);
 }
 
 void load_node_dat(const FunctionCallbackInfo<Value>& args) {
@@ -811,6 +841,7 @@ void init(Local<Object> exports) {
     NODE_SET_METHOD(exports, "pause_transfer", pause_transfer);
     NODE_SET_METHOD(exports, "resume_transfer", resume_transfer);
     NODE_SET_METHOD(exports, "restore_transfer", restore_transfer);
+    NODE_SET_METHOD(exports, "remove_transfer", remove_transfer);
     NODE_SET_METHOD(exports, "load_node_dat", load_node_dat);
     NODE_SET_METHOD(exports, "load_server_met", load_server_met);
     NODE_SET_METHOD(exports, "parse_hash", parse_hash);
