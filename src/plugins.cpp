@@ -48,6 +48,7 @@ class loader_impl : public emulex::loader_ {
     virtual void on_state_changed(libed2k::state_changed_alert* alert);
     virtual void on_transfer_added(libed2k::added_transfer_alert* alert);
     virtual void on_portmap(libed2k::portmap_alert* alert);
+    virtual void on_portmap_error(libed2k::portmap_error_alert* alert);
     virtual void on_shutdown_completed();
     virtual void call_callback(int argc, Local<v8::Value>* argv);
 };
@@ -351,6 +352,15 @@ void loader_impl::on_portmap(libed2k::portmap_alert* alert){
     Local<Object> vals = Object::New(isolate);
     vals->Set(String::NewFromUtf8(isolate, "mapping"), Number::New(isolate, (uint32_t)alert->mapping));
     vals->Set(String::NewFromUtf8(isolate, "external_port"), Number::New(isolate, (uint32_t)alert->external_port));
+    argv[1] = vals;
+    call_callback(2, argv);
+}
+    
+void loader_impl::on_portmap_error(libed2k::portmap_error_alert* alert){
+    Local<Value> argv[2];
+    argv[0] = String::NewFromUtf8(isolate, "portmap_error");
+    Local<Object> vals = Object::New(isolate);
+    vals->Set(String::NewFromUtf8(isolate, "mapping"), Number::New(isolate, (uint32_t)alert->mapping));
     argv[1] = vals;
     call_callback(2, argv);
 }
