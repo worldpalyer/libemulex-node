@@ -998,6 +998,18 @@ void load_server_met(const FunctionCallbackInfo<Value>& args) {
     args.GetReturnValue().Set(nodes);
 }
 
+void emulex_env(const FunctionCallbackInfo<Value>& args) {
+    Isolate* isolate = args.GetIsolate();
+    Local<Object> envs = Object::New(isolate);
+    envs->Set(String::NewFromUtf8(isolate, "PIECE_SIZE"), Number::New(isolate, libed2k::PIECE_SIZE));
+    envs->Set(String::NewFromUtf8(isolate, "BLOCK_SIZE"), Number::New(isolate, libed2k::BLOCK_SIZE));
+    envs->Set(String::NewFromUtf8(isolate, "HIGHEST_LOWID_ED2K"), Number::New(isolate, libed2k::HIGHEST_LOWID_ED2K));
+    envs->Set(String::NewFromUtf8(isolate, "MAX_ED2K_PACKET_LEN"), Number::New(isolate, libed2k::MAX_ED2K_PACKET_LEN));
+    envs->Set(String::NewFromUtf8(isolate, "LIBED2K_SERVER_CONN_MAX_SIZE"),
+              Number::New(isolate, libed2k::LIBED2K_SERVER_CONN_MAX_SIZE));
+    args.GetReturnValue().Set(envs);
+}
+
 void init(Local<Object> exports) {
     NODE_SET_METHOD(exports, "bootstrap", bootstrap);
     NODE_SET_METHOD(exports, "shutdown", shutdown);
@@ -1017,6 +1029,7 @@ void init(Local<Object> exports) {
     NODE_SET_METHOD(exports, "load_node_dat", load_node_dat);
     NODE_SET_METHOD(exports, "load_server_met", load_server_met);
     NODE_SET_METHOD(exports, "parse_hash", parse_hash);
+    NODE_SET_METHOD(exports, "emulex_env", emulex_env);
 }
 
 NODE_MODULE(emulex, init);
