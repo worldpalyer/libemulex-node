@@ -1,11 +1,11 @@
 {
   "name": "libemulex-node",
   "version": "0.1.5",
-  "description": "A synchronous HTTP Client library for node.js",
+  "description": "A node binding for libemulex",
   "main": "lib/emulex.js",
   "repository": {
     "type": "git",
-    "url": "git://github.com/emulex/libemulex-node.git"
+    "url": "git://github.com/worldplayer/libemulex-node.git"
   },
   "author": "Centny",
   "license": "GPL-3.0",
@@ -26,9 +26,9 @@
     "test": "node test/run.js"
   },
   "bugs": {
-    "url": "https://github.com/emulex/libemulex-node/issues"
+    "url": "https://github.com/worldplayer/libemulex-node/issues"
   },
-  "homepage": "https://github.com/emulex/libemulex-node",
+  "homepage": "https://github.com/worldplayer/libemulex-node",
   "directories": {
     "test": "test"
   },

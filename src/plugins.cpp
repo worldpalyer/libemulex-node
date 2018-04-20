@@ -335,8 +335,8 @@ void loader_impl::on_state_changed(libed2k::state_changed_alert* alert) {
     argv[1] = vals;
     call_callback(2, argv);
 }
-    
-void loader_impl::on_transfer_added(libed2k::added_transfer_alert* alert){
+
+void loader_impl::on_transfer_added(libed2k::added_transfer_alert* alert) {
     Local<Value> argv[2];
     argv[0] = String::NewFromUtf8(isolate, "transfer_added");
     Local<Object> vals = Object::New(isolate);
@@ -345,8 +345,8 @@ void loader_impl::on_transfer_added(libed2k::added_transfer_alert* alert){
     argv[1] = vals;
     call_callback(2, argv);
 }
-    
-void loader_impl::on_portmap(libed2k::portmap_alert* alert){
+
+void loader_impl::on_portmap(libed2k::portmap_alert* alert) {
     Local<Value> argv[2];
     argv[0] = String::NewFromUtf8(isolate, "portmap");
     Local<Object> vals = Object::New(isolate);
@@ -355,8 +355,8 @@ void loader_impl::on_portmap(libed2k::portmap_alert* alert){
     argv[1] = vals;
     call_callback(2, argv);
 }
-    
-void loader_impl::on_portmap_error(libed2k::portmap_error_alert* alert){
+
+void loader_impl::on_portmap_error(libed2k::portmap_error_alert* alert) {
     Local<Value> argv[2];
     argv[0] = String::NewFromUtf8(isolate, "portmap_error");
     Local<Object> vals = Object::New(isolate);
@@ -544,6 +544,47 @@ void search_hash_file(const FunctionCallbackInfo<Value>& args) {
     XL.loader->search_file(hash, type);
 }
 
+void piece_availability(const FunctionCallbackInfo<Value>& args) {
+    Isolate* isolate = args.GetIsolate();
+    if (!XL.running) {
+        StringException(isolate, "emulex is not running");
+        return;
+    }
+    if (!(args.Length() > 0 && args[0]->IsObject())) {
+        StringException(isolate, "emulex ed2k piece availability receive wrong arguments");
+        return;
+    }
+    Local<Object> vargs = args[0]->ToObject();
+    //
+    std::string hash;
+    Local<Value> hash_v = vargs->Get(String::NewFromUtf8(isolate, "hash"));
+    if (hash_v->IsString()) {
+        String::Utf8Value hash_s(hash_v->ToString());
+        if (hash_s.length()) {
+            hash = std::string(*hash_s, hash_s.length());
+        } else {
+            StringException(isolate, "emulex ed2k piece availability fail with args.hash is empty");
+            return;
+        }
+    } else {
+        StringException(isolate, "emulex ed2k piece availability fail with args.hash is not string");
+        return;
+    }
+    auto hash_4 = libed2k::md4_hash::fromString(hash);
+    auto th = XL.loader->find_transfer(hash_4);
+    if (th.is_valid()) {
+        std::vector<int> avail;
+        th.piece_availability(avail);
+        Local<Array> ts = Array::New(isolate, avail.size());
+        for (size_t i = 0; i < avail.size(); i++) {
+            ts->Set(i, Uint32::New(isolate, avail[i]));
+        }
+        args.GetReturnValue().Set(ts);
+    } else {
+        args.GetReturnValue().Set(Null(isolate));
+    }
+}
+
 void add_transfer(const FunctionCallbackInfo<Value>& args) {
     Isolate* isolate = args.GetIsolate();
     if (!XL.running) {
@@ -673,6 +714,59 @@ void list_transfer(const FunctionCallbackInfo<Value>& args) {
     args.GetReturnValue().Set(ts);
 }
 
+void find_transfer(const FunctionCallbackInfo<Value>& args) {
+    Isolate* isolate = args.GetIsolate();
+    if (!XL.running) {
+        StringException(isolate, "emulex is not running");
+        return;
+    }
+    if (!(args.Length() > 0 && args[0]->IsObject())) {
+        StringException(isolate, "emulex ed2k find transfer receive wrong arguments");
+        return;
+    }
+    Local<Object> vargs = args[0]->ToObject();
+    //
+    std::string hash;
+    Local<Value> hash_v = vargs->Get(String::NewFromUtf8(isolate, "hash"));
+    if (hash_v->IsString()) {
+        String::Utf8Value hash_s(hash_v->ToString());
+        if (hash_s.length()) {
+            hash = std::string(*hash_s, hash_s.length());
+        } else {
+            StringException(isolate, "emulex ed2k find transfer fail with args.hash is empty");
+            return;
+        }
+    } else {
+        StringException(isolate, "emulex ed2k find transfer fail with args.hash is not string");
+        return;
+    }
+    auto hash_4 = libed2k::md4_hash::fromString(hash);
+    auto th = XL.loader->find_transfer(hash_4);
+    Local<Object> t = Object::New(isolate);
+    if (th.is_valid()) {
+        const libed2k::transfer_status status = th.status();
+        t->Set(String::NewFromUtf8(isolate, "is_valid"), Boolean::New(isolate, true));
+        t->Set(String::NewFromUtf8(isolate, "emd4"), String::NewFromUtf8(isolate, th.hash().toString().c_str()));
+        t->Set(String::NewFromUtf8(isolate, "save_path"), String::NewFromUtf8(isolate, th.save_path().c_str()));
+        t->Set(String::NewFromUtf8(isolate, "size"), Number::New(isolate, th.size()));
+        t->Set(String::NewFromUtf8(isolate, "state"), Uint32::New(isolate, th.state()));
+        t->Set(String::NewFromUtf8(isolate, "all_time_download"), Uint32::New(isolate, status.all_time_download));
+        t->Set(String::NewFromUtf8(isolate, "all_time_upload"), Uint32::New(isolate, status.all_time_upload));
+        t->Set(String::NewFromUtf8(isolate, "download_payload_rate"),
+               Uint32::New(isolate, status.download_payload_rate));
+        t->Set(String::NewFromUtf8(isolate, "upload_payload_rate"), Uint32::New(isolate, status.upload_payload_rate));
+        t->Set(String::NewFromUtf8(isolate, "download_payload_rate"),
+               Uint32::New(isolate, status.download_payload_rate));
+        t->Set(String::NewFromUtf8(isolate, "num_seeds"), Uint32::New(isolate, status.num_seeds));
+        t->Set(String::NewFromUtf8(isolate, "num_peers"), Uint32::New(isolate, status.num_peers));
+        t->Set(String::NewFromUtf8(isolate, "total_done"), Uint32::New(isolate, status.total_done));
+        t->Set(String::NewFromUtf8(isolate, "progress"), Number::New(isolate, status.progress));
+    } else {
+        t->Set(String::NewFromUtf8(isolate, "is_valid"), Boolean::New(isolate, false));
+    }
+    args.GetReturnValue().Set(t);
+}
+
 void pause_transfer(const FunctionCallbackInfo<Value>& args) {
     Isolate* isolate = args.GetIsolate();
     if (!XL.running) {
@@ -700,7 +794,8 @@ void pause_transfer(const FunctionCallbackInfo<Value>& args) {
         return;
     }
     auto hash_4 = libed2k::md4_hash::fromString(hash);
-    XL.loader->pause_transfer(hash_4);
+    auto th = XL.loader->pause_transfer(hash_4);
+    args.GetReturnValue().Set(Boolean::New(isolate, th.is_valid()));
 }
 
 void resume_transfer(const FunctionCallbackInfo<Value>& args) {
@@ -730,7 +825,8 @@ void resume_transfer(const FunctionCallbackInfo<Value>& args) {
         return;
     }
     auto hash_4 = libed2k::md4_hash::fromString(hash);
-    XL.loader->resume_transfer(hash_4);
+    auto th = XL.loader->resume_transfer(hash_4);
+    args.GetReturnValue().Set(Boolean::New(isolate, th.is_valid()));
 }
 
 void remove_transfer(const FunctionCallbackInfo<Value>& args) {
@@ -760,7 +856,8 @@ void remove_transfer(const FunctionCallbackInfo<Value>& args) {
         return;
     }
     auto hash_4 = libed2k::md4_hash::fromString(hash);
-    XL.loader->remove_transfer(hash_4);
+    auto th = XL.loader->remove_transfer(hash_4);
+    args.GetReturnValue().Set(Boolean::New(isolate, th.is_valid()));
 }
 
 void restore_transfer(const FunctionCallbackInfo<Value>& args) {
@@ -789,7 +886,8 @@ void restore_transfer(const FunctionCallbackInfo<Value>& args) {
         StringException(isolate, "emulex ed2k restore transfer fail with args.hash is not string");
         return;
     }
-    XL.loader->restore_transfer(path);
+    auto th = XL.loader->restore_transfer(path);
+    args.GetReturnValue().Set(Boolean::New(isolate, th.is_valid()));
 }
 
 void load_node_dat(const FunctionCallbackInfo<Value>& args) {
@@ -908,8 +1006,10 @@ void init(Local<Object> exports) {
     NODE_SET_METHOD(exports, "ed2k_server_connect", ed2k_server_connect);
     NODE_SET_METHOD(exports, "search_file", search_file);
     NODE_SET_METHOD(exports, "search_hash_file", search_hash_file);
+    NODE_SET_METHOD(exports, "piece_availability", piece_availability);
     NODE_SET_METHOD(exports, "add_transfer", add_transfer);
     NODE_SET_METHOD(exports, "list_transfer", list_transfer);
+    NODE_SET_METHOD(exports, "find_transfer", find_transfer);
     NODE_SET_METHOD(exports, "pause_transfer", pause_transfer);
     NODE_SET_METHOD(exports, "resume_transfer", resume_transfer);
     NODE_SET_METHOD(exports, "restore_transfer", restore_transfer);
@@ -921,5 +1021,5 @@ void init(Local<Object> exports) {
 
 NODE_MODULE(emulex, init);
 ///
-}
-}
+}  // namespace n
+}  // namespace emulex

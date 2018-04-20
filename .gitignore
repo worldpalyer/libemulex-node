@@ -40,3 +40,5 @@ build
 
 out.txt
 /*.bak
+
+package-lock.json
