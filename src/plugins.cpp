@@ -231,18 +231,15 @@ void loader_impl::on_server_shared(libed2k::shared_files_alert* alert) {
     Local<Array> fs = Array::New(isolate, collection.size());
     for (size_t n = 0; n < collection.size(); ++n) {
         Local<Object> file = Object::New(isolate);
-        boost::uint64_t fsize = 0;
         boost::shared_ptr<libed2k::base_tag> low = collection[n].m_list.getTagByNameId(libed2k::FT_FILESIZE);
         boost::shared_ptr<libed2k::base_tag> hi = collection[n].m_list.getTagByNameId(libed2k::FT_FILESIZE_HI);
         boost::shared_ptr<libed2k::base_tag> src = collection[n].m_list.getTagByNameId(libed2k::FT_SOURCES);
         if (low.get()) {
-            fsize = low->asInt();
+            file->Set(String::NewFromUtf8(isolate, "size"), Number::New(isolate, (uint32_t)low->asInt()));
         }
         if (hi.get()) {
-            fsize += hi->asInt() << 32;
+            file->Set(String::NewFromUtf8(isolate, "size_hi"), Number::New(isolate, (uint32_t)hi->asInt()));
         }
-        file->Set(String::NewFromUtf8(isolate, "size"), Number::New(isolate, (uint32_t)fsize));
-        file->Set(String::NewFromUtf8(isolate, "size_h"), Number::New(isolate, (uint32_t)(fsize >> 32)));
         file->Set(String::NewFromUtf8(isolate, "sources"), Number::New(isolate, src->asInt()));
         file->Set(String::NewFromUtf8(isolate, "hash"),
                   String::NewFromUtf8(isolate, collection[n].m_hFile.toString().c_str()));
