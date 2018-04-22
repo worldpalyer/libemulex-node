@@ -10,6 +10,7 @@
 #define plugins_hpp
 
 #include <node.h>
+#include <node_buffer.h>
 #include <stdio.h>
 #include <v8.h>
 #include <uv.h>
@@ -25,6 +26,6 @@ using namespace v8;
 void Initialize(Local<Object> exports);
 void NodeRegister();
 //
-}
-}
+}  // namespace n
+}  // namespace emulex
 #endif /* plugins_hpp */

@@ -8,6 +8,7 @@
 
 #include "plugins.hpp"
 #include "hash.hpp"
+#include <boost/filesystem.hpp>
 
 namespace emulex {
 namespace n {
@@ -40,6 +41,7 @@ class loader_impl : public emulex::loader_ {
     virtual void on_server_status(libed2k::server_status_alert* alert);
     virtual void on_server_message(libed2k::server_message_alert* alert);
     virtual void on_server_identity(libed2k::server_identity_alert* alert);
+    virtual void on_server_connection_closed(libed2k::server_connection_closed* alert);
     virtual void on_server_shared(libed2k::shared_files_alert* alert);
     virtual void on_finished_transfer(libed2k::finished_transfer_alert* alert);
     virtual void on_resumed_data_transfer(libed2k::resumed_transfer_alert* alert);
@@ -125,7 +127,7 @@ loader_impl::loader_impl(Local<Object> settings) : base_settings(settings) {
     }
 }
 
-loader_impl::~loader_impl() {}
+loader_impl::~loader_impl() { DBG("loader_impl: session is free"); }
 
 void loader_impl::do_async_alert(libed2k::alert const& alert) {
     v8::HandleScope hs(isolate);
@@ -143,7 +145,6 @@ void loader_impl::on_alert(libed2k::alert const& alert) {
 }
 
 void loader_impl::on_server_initialized(libed2k::server_connection_initialized_alert* alert) {
-    DBG("loader_impl: server initialized: cid: " << alert->client_id);
     if (ed2k_callback.IsEmpty()) {
         return;
     }
@@ -158,7 +159,6 @@ void loader_impl::on_server_initialized(libed2k::server_connection_initialized_a
 }
 
 void loader_impl::on_server_resolved(libed2k::server_name_resolved_alert* alert) {
-    DBG("loader_impl: server name was resolved: " << alert->endpoint);
     if (ed2k_callback.IsEmpty()) {
         return;
     }
@@ -173,7 +173,6 @@ void loader_impl::on_server_resolved(libed2k::server_name_resolved_alert* alert)
 }
 
 void loader_impl::on_server_status(libed2k::server_status_alert* alert) {
-    DBG("loader_impl: server status: files count: " << alert->files_count << " users count " << alert->users_count);
     if (ed2k_callback.IsEmpty()) {
         return;
     }
@@ -189,7 +188,6 @@ void loader_impl::on_server_status(libed2k::server_status_alert* alert) {
 }
 
 void loader_impl::on_server_message(libed2k::server_message_alert* alert) {
-    DBG("loader_impl: msg: " << alert->server_message);
     if (ed2k_callback.IsEmpty()) {
         return;
     }
@@ -204,8 +202,6 @@ void loader_impl::on_server_message(libed2k::server_message_alert* alert) {
 }
 
 void loader_impl::on_server_identity(libed2k::server_identity_alert* alert) {
-    DBG("loader_impl: server_identity_alert: " << alert->server_hash.toString() << " name:  " << alert->server_name
-                                               << " descr: " << alert->server_descr);
     if (ed2k_callback.IsEmpty()) {
         return;
     }
@@ -222,12 +218,25 @@ void loader_impl::on_server_identity(libed2k::server_identity_alert* alert) {
     call_callback(2, argv);
 }
 
-void loader_impl::on_server_shared(libed2k::shared_files_alert* alert) {
-    std::vector<libed2k::shared_file_entry> collection = alert->m_files.m_collection;
-    DBG("loader_impl: search RESULT: " << collection.size());
+void loader_impl::on_server_connection_closed(libed2k::server_connection_closed* alert) {
     if (ed2k_callback.IsEmpty()) {
         return;
     }
+    Local<v8::Value> argv[2];
+    argv[0] = String::NewFromUtf8(isolate, "server_connection_closed");
+    Local<Object> vals = Object::New(isolate);
+    vals->Set(String::NewFromUtf8(isolate, "host"), String::NewFromUtf8(isolate, alert->host.c_str()));
+    vals->Set(String::NewFromUtf8(isolate, "port"), Uint32::New(isolate, alert->port));
+    vals->Set(String::NewFromUtf8(isolate, "name"), String::NewFromUtf8(isolate, alert->name.c_str()));
+    argv[1] = vals;
+    call_callback(2, argv);
+}
+
+void loader_impl::on_server_shared(libed2k::shared_files_alert* alert) {
+    if (ed2k_callback.IsEmpty()) {
+        return;
+    }
+    std::vector<libed2k::shared_file_entry> collection = alert->m_files.m_collection;
     Local<Array> fs = Array::New(isolate, collection.size());
     for (size_t n = 0; n < collection.size(); ++n) {
         Local<Object> file = Object::New(isolate);
@@ -238,7 +247,7 @@ void loader_impl::on_server_shared(libed2k::shared_files_alert* alert) {
             file->Set(String::NewFromUtf8(isolate, "size"), Number::New(isolate, (uint32_t)low->asInt()));
         }
         if (hi.get()) {
-            file->Set(String::NewFromUtf8(isolate, "size_hi"), Number::New(isolate, (uint32_t)hi->asInt()));
+            file->Set(String::NewFromUtf8(isolate, "size_h"), Number::New(isolate, (uint32_t)hi->asInt()));
         }
         file->Set(String::NewFromUtf8(isolate, "sources"), Number::New(isolate, src->asInt()));
         file->Set(String::NewFromUtf8(isolate, "hash"),
@@ -258,7 +267,6 @@ void loader_impl::on_server_shared(libed2k::shared_files_alert* alert) {
 }
 
 void loader_impl::on_finished_transfer(libed2k::finished_transfer_alert* alert) {
-    DBG("ed2k_session_: finished transfer: " << alert->m_handle.save_path());
     if (ed2k_callback.IsEmpty()) {
         return;
     }
@@ -277,7 +285,6 @@ void loader_impl::on_finished_transfer(libed2k::finished_transfer_alert* alert) 
 }
 
 void loader_impl::on_resumed_data_transfer(libed2k::resumed_transfer_alert* alert) {
-    DBG("ed2k_session_: resumed data transfer: " << alert->m_handle.save_path());
     if (ed2k_callback.IsEmpty()) {
         return;
     }
@@ -291,7 +298,6 @@ void loader_impl::on_resumed_data_transfer(libed2k::resumed_transfer_alert* aler
 }
 
 void loader_impl::on_paused_data_transfer(libed2k::paused_transfer_alert* alert) {
-    DBG("ed2k_session_: paused data transfer: " << alert->m_handle.save_path());
     if (ed2k_callback.IsEmpty()) {
         return;
     }
@@ -305,7 +311,6 @@ void loader_impl::on_paused_data_transfer(libed2k::paused_transfer_alert* alert)
 }
 
 void loader_impl::on_deleted_data_transfer(libed2k::deleted_transfer_alert* alert) {
-    DBG("ed2k_session_: deleted data transfer: " << alert->m_hash.toString());
     if (ed2k_callback.IsEmpty()) {
         return;
     }
@@ -318,7 +323,6 @@ void loader_impl::on_deleted_data_transfer(libed2k::deleted_transfer_alert* aler
 }
 
 void loader_impl::on_state_changed(libed2k::state_changed_alert* alert) {
-    DBG("ed2k_session_: state changed" << alert->m_handle.hash());
     if (ed2k_callback.IsEmpty()) {
         return;
     }
@@ -363,12 +367,12 @@ void loader_impl::on_portmap_error(libed2k::portmap_error_alert* alert) {
 }
 
 void loader_impl::on_shutdown_completed() {
-    DBG("loader_impl: loader shutdown completed");
     XL.running = false;
     if (XL.loader) {
         delete XL.loader;
         XL.loader = 0;
     }
+    DBG("loader_impl: loader shutdown completed");
     if (XL.shutdown_callback.IsEmpty()) {
         return;
     }
@@ -390,13 +394,24 @@ void bootstrap(const FunctionCallbackInfo<Value>& args) {
     }
     XL.settings = args[0]->ToObject();
     Local<Value> log = XL.settings->Get(String::NewFromUtf8(isolate, "logging"));
-    if (log->IsNumber()) {
-        LOGGER_INIT((unsigned char)log->Uint32Value());
+    Local<Value> logfile = XL.settings->Get(String::NewFromUtf8(isolate, "logfile"));
+    if (logfile->IsString()) {
+        String::Utf8Value logfile_c(XL.settings->Get(String::NewFromUtf8(isolate, "logfile"))->ToString());
+        if (log->IsNumber()) {
+            LOGGER_INIT_FILE((unsigned char)log->Uint32Value(), *logfile_c);
+        } else {
+            LOGGER_INIT_FILE('\xFF', *logfile_c);
+        }
     } else {
-        LOGGER_INIT('\xFF');
+        if (log->IsNumber()) {
+            LOGGER_INIT((unsigned char)log->Uint32Value());
+        } else {
+            LOGGER_INIT('\xFF');
+        }
     }
+    Local<Value> enable_upnp = XL.settings->Get(String::NewFromUtf8(isolate, "enable_upnp"));
     XL.loader = new loader_impl(XL.settings);
-    XL.loader->start();
+    XL.loader->start(enable_upnp->IsBoolean() && enable_upnp->BooleanValue());
     XL.running = true;
 }
 
@@ -465,6 +480,14 @@ void search_file(const FunctionCallbackInfo<Value>& args) {
         return;
     }
     Local<Object> vargs = args[0]->ToObject();
+    //
+    Local<Value> hash_v = vargs->Get(String::NewFromUtf8(isolate, "hash"));
+    if (hash_v->IsString()) {
+        String::Utf8Value hash_s(hash_v->ToString());
+        std::string hash = std::string(*hash_s, hash_s.length());
+        XL.loader->search_file(hash, MD4_H);
+        return;
+    }
     //
     std::string query;
     Local<Value> query_v = vargs->Get(String::NewFromUtf8(isolate, "query"));
@@ -593,85 +616,113 @@ void add_transfer(const FunctionCallbackInfo<Value>& args) {
         return;
     }
     Local<Object> vargs = args[0]->ToObject();
-    //
     std::string hash;
-    Local<Value> hash_v = vargs->Get(String::NewFromUtf8(isolate, "hash"));
-    if (hash_v->IsString()) {
-        String::Utf8Value hash_s(hash_v->ToString());
-        if (hash_s.length()) {
-            hash = std::string(*hash_s, hash_s.length());
-        } else {
-            StringException(isolate, "emulex ed2k add transfer fail with args.hash is empty");
-            return;
-        }
-    } else {
-        StringException(isolate, "emulex ed2k add transfer fail with args.hash is not string");
-        return;
-    }
-    //
     std::string path;
-    Local<Value> path_v = vargs->Get(String::NewFromUtf8(isolate, "path"));
-    if (path_v->IsString()) {
-        String::Utf8Value path_s(path_v->ToString());
-        if (path_s.length()) {
-            path = std::string(*path_s, path_s.length());
-        } else {
-            StringException(isolate, "emulex ed2k add transfer fail with args.path is empty");
-            return;
-        }
-    } else {
-        StringException(isolate, "emulex ed2k add transfer fail with args.path is not string");
-        return;
-    }
-    //
     boost::uint64_t size = 0;
-    Local<Value> size_v = vargs->Get(String::NewFromUtf8(isolate, "size"));
-    if (size_v->IsNumber()) {
-        size = (boost::uint64_t)size_v->NumberValue();
-        if (size < 1) {
-            StringException(isolate, "emulex ed2k add transfer fail with args.size is zero");
+    std::vector<std::string> parts;
+    std::string resources;
+    bool seed;
+    //
+    Local<Value> link = vargs->Get(String::NewFromUtf8(isolate, "link"));
+    if (link->IsString()) {
+        String::Utf8Value link_s(link->ToString());
+        std::string ls(*link_s, link_s.length());
+        libed2k::emule_collection_entry entry = libed2k::emule_collection::fromLink(ls);
+        hash = entry.m_filehash.toString();
+        size = entry.m_filesize;
+        Local<Value> path_v = vargs->Get(String::NewFromUtf8(isolate, "path"));
+        Local<Value> dir_v = vargs->Get(String::NewFromUtf8(isolate, "dir"));
+        std::string dir;
+        if (path_v->IsString()) {
+            String::Utf8Value path_s(path_v->ToString());
+            path = std::string(*path_s, path_s.length());
+        } else if (dir_v->IsString()) {
+            String::Utf8Value dir_s(dir_v->ToString());
+            dir = std::string(*dir_s, dir_s.length());
+            boost::filesystem::path filename(entry.m_filename);
+            path = dir + "/" + filename.filename().string();
+            int idx = 0;
+            while (boost::filesystem::exists(path)) {
+                path = dir + "/" + filename.stem().string() + "_" + std::to_string(idx) + filename.extension().string();
+                idx++;
+            }
+        } else {
+            StringException(isolate, "emulex ed2k add transfer fail with args.path/args.dir is not string");
             return;
         }
     } else {
-        StringException(isolate, "emulex ed2k add transfer fail with args.size is not int");
-        return;
-    }
-    Local<Value> size_h_v = vargs->Get(String::NewFromUtf8(isolate, "size_h"));
-    if (size_h_v->IsNumber()) {
-        size += ((boost::uint64_t)size_v->NumberValue()) << 32;
-    }
-    //
-    std::vector<std::string> parts;
-    Local<Value> parts_v = vargs->Get(String::NewFromUtf8(isolate, "parts"));
-    if (parts_v->IsArray()) {
-        Local<Array> parts_l = Local<Array>::Cast(parts_v);
-        for (uint32_t i = 0; i < parts_l->Length(); i++) {
-            Local<Value> part_v = parts_l->Get(i);
-            String::Utf8Value part_s(part_v->ToString());
-            if (part_s.length()) {
-                parts.push_back(std::string(*part_s, part_s.length()));
+        Local<Value> path_v = vargs->Get(String::NewFromUtf8(isolate, "path"));
+        if (path_v->IsString()) {
+            String::Utf8Value path_s(path_v->ToString());
+            if (path_s.length()) {
+                path = std::string(*path_s, path_s.length());
             } else {
-                StringException(isolate, "emulex ed2k add transfer fail with args.parts is not string");
+                StringException(isolate, "emulex ed2k add transfer fail with args.path is empty");
+                return;
+            }
+        } else {
+            StringException(isolate, "emulex ed2k add transfer fail with args.path is not string");
+            return;
+        }
+        Local<Value> hash_v = vargs->Get(String::NewFromUtf8(isolate, "hash"));
+        if (hash_v->IsString()) {
+            String::Utf8Value hash_s(hash_v->ToString());
+            if (hash_s.length()) {
+                hash = std::string(*hash_s, hash_s.length());
+            } else {
+                StringException(isolate, "emulex ed2k add transfer fail with args.hash is empty");
+                return;
+            }
+        } else {
+            StringException(isolate, "emulex ed2k add transfer fail with args.hash is not string");
+            return;
+        }
+        //
+        Local<Value> size_v = vargs->Get(String::NewFromUtf8(isolate, "size"));
+        if (size_v->IsNumber()) {
+            size = (boost::uint64_t)size_v->NumberValue();
+            if (size < 1) {
+                StringException(isolate, "emulex ed2k add transfer fail with args.size is zero");
+                return;
+            }
+        } else {
+            StringException(isolate, "emulex ed2k add transfer fail with args.size is not int");
+            return;
+        }
+        Local<Value> size_h_v = vargs->Get(String::NewFromUtf8(isolate, "size_h"));
+        if (size_h_v->IsNumber()) {
+            size += ((boost::uint64_t)size_v->NumberValue()) << 32;
+        }
+        //
+        Local<Value> parts_v = vargs->Get(String::NewFromUtf8(isolate, "parts"));
+        if (parts_v->IsArray()) {
+            Local<Array> parts_l = Local<Array>::Cast(parts_v);
+            for (uint32_t i = 0; i < parts_l->Length(); i++) {
+                Local<Value> part_v = parts_l->Get(i);
+                String::Utf8Value part_s(part_v->ToString());
+                if (part_s.length()) {
+                    parts.push_back(std::string(*part_s, part_s.length()));
+                } else {
+                    StringException(isolate, "emulex ed2k add transfer fail with args.parts is not string");
+                    return;
+                }
+            }
+        }
+        //
+        Local<Value> resources_v = vargs->Get(String::NewFromUtf8(isolate, "resources"));
+        if (resources_v->IsString()) {
+            String::Utf8Value resources_s(resources_v->ToString());
+            if (resources_s.length()) {
+                resources = std::string(*resources_s, resources_s.length());
+            } else {
+                StringException(isolate, "emulex ed2k add transfer fail with args.resources is empty");
                 return;
             }
         }
+        //
+        Local<Value> seed_v = vargs->Get(String::NewFromUtf8(isolate, "seed"));
+        seed = seed_v->IsBoolean() && seed_v->BooleanValue();
     }
-    //
-    std::string resources;
-    Local<Value> resources_v = vargs->Get(String::NewFromUtf8(isolate, "resources"));
-    if (resources_v->IsString()) {
-        String::Utf8Value resources_s(resources_v->ToString());
-        if (resources_s.length()) {
-            resources = std::string(*resources_s, resources_s.length());
-        } else {
-            StringException(isolate, "emulex ed2k add transfer fail with args.resources is empty");
-            return;
-        }
-    }
-    //
-    bool seed;
-    Local<Value> seed_v = vargs->Get(String::NewFromUtf8(isolate, "seed"));
-    seed = seed_v->IsBoolean() && seed_v->BooleanValue();
     //
     //
     DBG("emulex: add transfter by hash:" << hash << ",path:" << path << ",size:" << size << ",parts:" << parts.size()
@@ -896,24 +947,27 @@ void load_node_dat(const FunctionCallbackInfo<Value>& args) {
     Local<Object> vargs = args[0]->ToObject();
     //
     //
-    std::string path;
+    libed2k::kad_nodes_dat knd;
+    Local<Value> data_v = vargs->Get(String::NewFromUtf8(isolate, "data"));
     Local<Value> path_v = vargs->Get(String::NewFromUtf8(isolate, "path"));
-    if (path_v->IsString()) {
+    if (data_v->IsUint8Array()) {
+        char* buf = Buffer::Data(data_v);
+        size_t len = Buffer::Length(data_v);
+        if (!emulex::load_raw_nodes(knd, buf, len)) {
+            std::string emsg = "emulex ed2k load node data fail with raw data";
+            StringException(isolate, emsg.c_str());
+            return;
+        }
+    } else if (path_v->IsString()) {
         String::Utf8Value path_s(path_v->ToString());
-        if (path_s.length()) {
-            path = std::string(*path_s, path_s.length());
-        } else {
-            StringException(isolate, "emulex ed2k load node dat fail with args.path is empty");
+        std::string path = std::string(*path_s, path_s.length());
+        if (!emulex::load_nodes(knd, path)) {
+            std::string emsg = "emulex ed2k load node dat fail with read file " + path + " error";
+            StringException(isolate, emsg.c_str());
             return;
         }
     } else {
         StringException(isolate, "emulex ed2k load node dat fail with args.path is not string");
-        return;
-    }
-    libed2k::kad_nodes_dat knd;
-    if (!emulex::load_nodes(knd, path)) {
-        std::string emsg = "emulex ed2k load node dat fail with read file " + path + " error";
-        StringException(isolate, emsg.c_str());
         return;
     }
     //
@@ -955,24 +1009,27 @@ void load_server_met(const FunctionCallbackInfo<Value>& args) {
     Local<Object> vargs = args[0]->ToObject();
     //
     //
-    std::string path;
+    libed2k::server_met sm;
+    Local<Value> data_v = vargs->Get(String::NewFromUtf8(isolate, "data"));
     Local<Value> path_v = vargs->Get(String::NewFromUtf8(isolate, "path"));
-    if (path_v->IsString()) {
+    if (data_v->IsUint8Array()) {
+        char* buf = Buffer::Data(data_v);
+        size_t len = Buffer::Length(data_v);
+        if (!emulex::load_raw_server_met(sm, buf, len)) {
+            std::string emsg = "emulex ed2k load server met fail with raw data";
+            StringException(isolate, emsg.c_str());
+            return;
+        }
+    } else if (path_v->IsString()) {
         String::Utf8Value path_s(path_v->ToString());
-        if (path_s.length()) {
-            path = std::string(*path_s, path_s.length());
-        } else {
-            StringException(isolate, "emulex ed2k load server met fail with args.path is empty");
+        std::string path = std::string(*path_s, path_s.length());
+        if (!emulex::load_server_met(sm, path)) {
+            std::string emsg = "emulex ed2k load server met fail with read file " + path + " error";
+            StringException(isolate, emsg.c_str());
             return;
         }
     } else {
         StringException(isolate, "emulex ed2k load server met fail with args.path is not string");
-        return;
-    }
-    libed2k::server_met sm;
-    if (!emulex::load_server_met(sm, path)) {
-        std::string emsg = "emulex ed2k load server met fail with read file " + path + " error";
-        StringException(isolate, emsg.c_str());
         return;
     }
     //
@@ -980,7 +1037,7 @@ void load_server_met(const FunctionCallbackInfo<Value>& args) {
     Local<Array> nodes = Array::New(isolate, sm.m_servers.m_size);
     for (size_t n = 0; n < sm.m_servers.m_size; ++n) {
         Local<Object> node = Object::New(isolate);
-        node->Set(String::NewFromUtf8(isolate, "address"),
+        node->Set(String::NewFromUtf8(isolate, "host"),
                   String::NewFromUtf8(
                       isolate, libed2k::int2ipstr(sm.m_servers.m_collection.at(n).m_network_point.m_nIP).c_str()));
         node->Set(String::NewFromUtf8(isolate, "port"),
@@ -1012,7 +1069,6 @@ void init(Local<Object> exports) {
     NODE_SET_METHOD(exports, "shutdown", shutdown);
     NODE_SET_METHOD(exports, "ed2k_server_connect", ed2k_server_connect);
     NODE_SET_METHOD(exports, "ed2k_add_dht_node", ed2k_add_dht_node);
-    NODE_SET_METHOD(exports, "ed2k_server_connect", ed2k_server_connect);
     NODE_SET_METHOD(exports, "search_file", search_file);
     NODE_SET_METHOD(exports, "search_hash_file", search_hash_file);
     NODE_SET_METHOD(exports, "piece_availability", piece_availability);
