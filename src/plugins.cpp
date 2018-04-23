@@ -115,11 +115,25 @@ loader_impl::loader_impl(Local<Object> settings) : base_settings(settings) {
         ed2k_session_::settings.peer_timeout = 60;
     }
     this->settings.peer_connect_timeout = this->settings.peer_timeout;
+    //
     Local<Value> known = ed2k_settings->Get(String::NewFromUtf8(isolate, "m_known_file"));
     if (known->IsString()) {
         String::Utf8Value known_s(known->ToString());
         ed2k_session_::settings.m_known_file = std::string(*known_s, known_s.length());
     }
+    //
+    Local<Value> client_name = ed2k_settings->Get(String::NewFromUtf8(isolate, "client_name"));
+    if (client_name->IsString()) {
+        String::Utf8Value client_name_s(client_name->ToString());
+        ed2k_session_::settings.client_name = std::string(*client_name_s, client_name_s.length());
+    }
+    //
+    Local<Value> mod_name = ed2k_settings->Get(String::NewFromUtf8(isolate, "client_name"));
+    if (mod_name->IsString()) {
+        String::Utf8Value mod_name_s(mod_name->ToString());
+        ed2k_session_::settings.mod_name = std::string(*mod_name_s, mod_name_s.length());
+    }
+    //
     Local<Value> func = ed2k_settings->Get(String::NewFromUtf8(isolate, "callback"));
     if (func->IsFunction()) {
         Local<Function> cback = Local<Function>::Cast(func);

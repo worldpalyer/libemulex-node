@@ -23,8 +23,6 @@ namespace n {
 using namespace node;
 using namespace v8;
 //
-void Initialize(Local<Object> exports);
-void NodeRegister();
 //
 }  // namespace n
 }  // namespace emulex
