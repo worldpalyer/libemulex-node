@@ -619,6 +619,40 @@ void piece_availability(const FunctionCallbackInfo<Value>& args) {
     }
 }
 
+Local<Object> parse_transfer_handle(Isolate* isolate, libed2k::transfer_handle& th) {
+    const libed2k::transfer_status status = th.status();
+    Local<Object> t = Object::New(isolate);
+    if (th.is_valid()) {
+        const libed2k::transfer_status status = th.status();
+        t->Set(String::NewFromUtf8(isolate, "is_valid"), Boolean::New(isolate, true));
+        t->Set(String::NewFromUtf8(isolate, "emd4"), String::NewFromUtf8(isolate, th.hash().toString().c_str()));
+        t->Set(String::NewFromUtf8(isolate, "save_path"), String::NewFromUtf8(isolate, th.save_path().c_str()));
+        t->Set(String::NewFromUtf8(isolate, "size"), Number::New(isolate, th.size()));
+        t->Set(String::NewFromUtf8(isolate, "state"), Uint32::New(isolate, th.state()));
+        t->Set(String::NewFromUtf8(isolate, "all_time_download"), Uint32::New(isolate, status.all_time_download));
+        t->Set(String::NewFromUtf8(isolate, "all_time_upload"), Uint32::New(isolate, status.all_time_upload));
+        t->Set(String::NewFromUtf8(isolate, "download_payload_rate"),
+               Uint32::New(isolate, status.download_payload_rate));
+        t->Set(String::NewFromUtf8(isolate, "upload_payload_rate"), Uint32::New(isolate, status.upload_payload_rate));
+        t->Set(String::NewFromUtf8(isolate, "download_payload_rate"),
+               Uint32::New(isolate, status.download_payload_rate));
+        t->Set(String::NewFromUtf8(isolate, "num_seeds"), Uint32::New(isolate, status.num_seeds));
+        t->Set(String::NewFromUtf8(isolate, "num_peers"), Uint32::New(isolate, status.num_peers));
+        t->Set(String::NewFromUtf8(isolate, "total_done"), Uint32::New(isolate, status.total_done));
+        t->Set(String::NewFromUtf8(isolate, "progress"), Number::New(isolate, status.progress));
+        std::vector<int> avail;
+        th.piece_availability(avail);
+        Local<Array> ts = Array::New(isolate, avail.size());
+        for (size_t i = 0; i < avail.size(); i++) {
+            ts->Set(i, Uint32::New(isolate, avail[i]));
+        }
+        t->Set(String::NewFromUtf8(isolate, "pieces"), ts);
+    } else {
+        t->Set(String::NewFromUtf8(isolate, "is_valid"), Boolean::New(isolate, false));
+    }
+    return t;
+}
+
 void add_transfer(const FunctionCallbackInfo<Value>& args) {
     Isolate* isolate = args.GetIsolate();
     if (!XL.running) {
@@ -742,6 +776,10 @@ void add_transfer(const FunctionCallbackInfo<Value>& args) {
     DBG("emulex: add transfter by hash:" << hash << ",path:" << path << ",size:" << size << ",parts:" << parts.size()
                                          << ",resource:" << resources << ",seed:" << seed);
     XL.loader->add_transfer(hash, path, size, parts, resources, seed);
+    auto hash_4 = libed2k::md4_hash::fromString(hash);
+    auto th = XL.loader->find_transfer(hash_4);
+    Local<Object> t = parse_transfer_handle(isolate, th);
+    args.GetReturnValue().Set(t);
 }
 
 void list_transfer(const FunctionCallbackInfo<Value>& args) {
@@ -753,24 +791,8 @@ void list_transfer(const FunctionCallbackInfo<Value>& args) {
     std::vector<libed2k::transfer_handle> ths = XL.loader->list_transfter();
     Local<Array> ts = Array::New(isolate, ths.size());
     for (size_t i = 0; i < ths.size(); i++) {
-        const libed2k::transfer_handle& th = ths.at(i);
-        const libed2k::transfer_status status = th.status();
-        Local<Object> t = Object::New(isolate);
-        t->Set(String::NewFromUtf8(isolate, "emd4"), String::NewFromUtf8(isolate, th.hash().toString().c_str()));
-        t->Set(String::NewFromUtf8(isolate, "save_path"), String::NewFromUtf8(isolate, th.save_path().c_str()));
-        t->Set(String::NewFromUtf8(isolate, "size"), Number::New(isolate, th.size()));
-        t->Set(String::NewFromUtf8(isolate, "state"), Uint32::New(isolate, th.state()));
-        t->Set(String::NewFromUtf8(isolate, "all_time_download"), Uint32::New(isolate, status.all_time_download));
-        t->Set(String::NewFromUtf8(isolate, "all_time_upload"), Uint32::New(isolate, status.all_time_upload));
-        t->Set(String::NewFromUtf8(isolate, "download_payload_rate"),
-               Uint32::New(isolate, status.download_payload_rate));
-        t->Set(String::NewFromUtf8(isolate, "upload_payload_rate"), Uint32::New(isolate, status.upload_payload_rate));
-        t->Set(String::NewFromUtf8(isolate, "download_payload_rate"),
-               Uint32::New(isolate, status.download_payload_rate));
-        t->Set(String::NewFromUtf8(isolate, "num_seeds"), Uint32::New(isolate, status.num_seeds));
-        t->Set(String::NewFromUtf8(isolate, "num_peers"), Uint32::New(isolate, status.num_peers));
-        t->Set(String::NewFromUtf8(isolate, "total_done"), Uint32::New(isolate, status.total_done));
-        t->Set(String::NewFromUtf8(isolate, "progress"), Number::New(isolate, status.progress));
+        libed2k::transfer_handle& th = ths.at(i);
+        Local<Object> t = parse_transfer_handle(isolate, th);
         ts->Set(i, t);
     }
     args.GetReturnValue().Set(ts);
@@ -804,28 +826,7 @@ void find_transfer(const FunctionCallbackInfo<Value>& args) {
     }
     auto hash_4 = libed2k::md4_hash::fromString(hash);
     auto th = XL.loader->find_transfer(hash_4);
-    Local<Object> t = Object::New(isolate);
-    if (th.is_valid()) {
-        const libed2k::transfer_status status = th.status();
-        t->Set(String::NewFromUtf8(isolate, "is_valid"), Boolean::New(isolate, true));
-        t->Set(String::NewFromUtf8(isolate, "emd4"), String::NewFromUtf8(isolate, th.hash().toString().c_str()));
-        t->Set(String::NewFromUtf8(isolate, "save_path"), String::NewFromUtf8(isolate, th.save_path().c_str()));
-        t->Set(String::NewFromUtf8(isolate, "size"), Number::New(isolate, th.size()));
-        t->Set(String::NewFromUtf8(isolate, "state"), Uint32::New(isolate, th.state()));
-        t->Set(String::NewFromUtf8(isolate, "all_time_download"), Uint32::New(isolate, status.all_time_download));
-        t->Set(String::NewFromUtf8(isolate, "all_time_upload"), Uint32::New(isolate, status.all_time_upload));
-        t->Set(String::NewFromUtf8(isolate, "download_payload_rate"),
-               Uint32::New(isolate, status.download_payload_rate));
-        t->Set(String::NewFromUtf8(isolate, "upload_payload_rate"), Uint32::New(isolate, status.upload_payload_rate));
-        t->Set(String::NewFromUtf8(isolate, "download_payload_rate"),
-               Uint32::New(isolate, status.download_payload_rate));
-        t->Set(String::NewFromUtf8(isolate, "num_seeds"), Uint32::New(isolate, status.num_seeds));
-        t->Set(String::NewFromUtf8(isolate, "num_peers"), Uint32::New(isolate, status.num_peers));
-        t->Set(String::NewFromUtf8(isolate, "total_done"), Uint32::New(isolate, status.total_done));
-        t->Set(String::NewFromUtf8(isolate, "progress"), Number::New(isolate, status.progress));
-    } else {
-        t->Set(String::NewFromUtf8(isolate, "is_valid"), Boolean::New(isolate, false));
-    }
+    Local<Object> t = parse_transfer_handle(isolate, th);
     args.GetReturnValue().Set(t);
 }
 
